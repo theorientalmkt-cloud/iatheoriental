@@ -128,26 +128,42 @@ export async function getAiRoutesConfig(): Promise<AiRoutesConfig> {
 }
 
 export async function getAiDirectConfig(): Promise<AiDirectConfig> {
-  if (cachedDirect && isCacheValid()) return cachedDirect
+  // Leitura em tempo real (sem cache de memória) para garantir que alterações
+  // no painel administrativo reflitam imediatamente, sem necessidade de deploy.
+  const { data, error } = await supabase.admin
+    ?.from('settings')
+    .select('key, value')
+    .in('key', [SETTINGS_KEYS.direct, SETTINGS_KEYS.googleApiKey, 'gemini_api_key', SETTINGS_KEYS.openaiApiKey]) || { data: null, error: null }
 
-  const [rawDirect, dbGoogleApiKey, dbGeminiApiKeyLegacy, dbOpenaiApiKey] = await Promise.all([
-    getSettingValue(SETTINGS_KEYS.direct),
-    getSettingValue(SETTINGS_KEYS.googleApiKey),
-    getSettingValue('gemini_api_key'), // retrocompatibilidade: chave pode estar salva com nome antigo
-    getSettingValue(SETTINGS_KEYS.openaiApiKey),
-  ])
+  let rawDirect: string | null = null
+  let dbGoogleApiKey: string | null = null
+  let dbGeminiApiKeyLegacy: string | null = null
+  let dbOpenaiApiKey: string | null = null
 
-  // Fallbacks para variáveis de ambiente (Vercel) se não estiver configurado no banco
+  if (!error && data) {
+    data.forEach(row => {
+      if (row.key === SETTINGS_KEYS.direct) rawDirect = row.value
+      if (row.key === SETTINGS_KEYS.googleApiKey) dbGoogleApiKey = row.value
+      if (row.key === 'gemini_api_key') dbGeminiApiKeyLegacy = row.value
+      if (row.key === SETTINGS_KEYS.openaiApiKey) dbOpenaiApiKey = row.value
+    })
+  }
+
+  // Variáveis da Vercel servem ESTRITAMENTE como backup de segurança
   const envGoogleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY
   const envOpenaiApiKey = process.env.OPENAI_API_KEY
 
+  // Prioridade 1: Banco de Dados | Prioridade 2: Vercel Env
   const finalGoogleKey = dbGoogleApiKey || dbGeminiApiKeyLegacy || envGoogleApiKey
   const finalOpenaiKey = dbOpenaiApiKey || envOpenaiApiKey
 
   const parsed = parseJsonSetting<Partial<Pick<AiDirectConfig, 'provider' | 'model'>>>(rawDirect, {})
-  cachedDirect = normalizeDirect(parsed, finalGoogleKey, finalOpenaiKey)
-  cacheTime = Date.now()
-  return cachedDirect
+  const directConfig = normalizeDirect(parsed, finalGoogleKey, finalOpenaiKey)
+  
+  // Mantemos a referência atualizada, mas não bloqueamos leitura futura
+  cachedDirect = directConfig
+  
+  return directConfig
 }
 
 export async function getAiPromptsConfig(): Promise<AiPromptsConfig> {
