@@ -361,26 +361,43 @@ export async function processChatAgent(
     }
   }
 
+  // O provedor configurado diretamente no agente deve SEMPRE ter prioridade sobre o global.
+  // Isso garante que se a UI disser "OpenAI", usamos OpenAI.
+  const resolvedProvider = agent.provider || directConfig.provider || 'google'
   const modelId = agent.model || directConfig.model || DEFAULT_MODEL_ID
 
-  // Criar instância do modelo com a chave do usuário
+  // Criar instância do modelo com a chave correspondente ao provedor
   let rawModel
-  if (directConfig.provider === 'openai' && directConfig.openaiApiKey) {
+  if (resolvedProvider === 'openai') {
+    if (!directConfig.openaiApiKey) {
+      return {
+        success: false,
+        error: 'Chave OpenAI não configurada. Acesse Configurações → IA.',
+        latencyMs: Date.now() - startTime,
+      }
+    }
     const openai = createOpenAI({ apiKey: directConfig.openaiApiKey })
     rawModel = openai(modelId)
-  } else if (directConfig.googleApiKey) {
+  } else if (resolvedProvider === 'google') {
+    if (!directConfig.googleApiKey) {
+      return {
+        success: false,
+        error: 'Chave Google não configurada. Acesse Configurações → IA.',
+        latencyMs: Date.now() - startTime,
+      }
+    }
     const google = createGoogleGenerativeAI({ apiKey: directConfig.googleApiKey })
     rawModel = google(modelId)
   } else {
     return {
       success: false,
-      error: `Chave ${directConfig.provider === 'openai' ? 'OpenAI' : 'Google'} não configurada. Acesse Configurações → IA.`,
+      error: `Provedor ${resolvedProvider} não suportado.`,
       latencyMs: Date.now() - startTime,
     }
   }
 
   const model = await withDevTools(rawModel, { name: `agente:${agent.name}` })
-  console.log(`[chat-agent] Using ${directConfig.provider}/${modelId}`)
+  console.log(`[chat-agent] Using ${resolvedProvider}/${modelId}`)
 
   // Check if agent has indexed content in pgvector
   let hasKnowledgeBase = false

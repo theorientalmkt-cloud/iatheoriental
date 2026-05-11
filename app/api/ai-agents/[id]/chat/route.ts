@@ -237,20 +237,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { generateText, tool, stepCountIs } = await import('ai')
     const { withDevTools } = await import('@/lib/ai/devtools')
 
-    // Criar modelo direto via provider
+    // Criar modelo direto via provider escolhido
     const config = await getAiDirectConfig()
+    // O agente DEVE ser o determinador principal do provedor a ser usado
+    const resolvedProvider = agent.provider || config.provider || 'google'
     const targetModelId = agent.model || config.model || DEFAULT_MODEL_ID
+    
     let baseModel
-    if (config.provider === 'google') {
+    if (resolvedProvider === 'google') {
         if (!config.googleApiKey) throw new Error('Chave Google não configurada. Acesse Configurações → IA.')
         baseModel = createGoogleGenerativeAI({ apiKey: config.googleApiKey })(targetModelId)
-    } else {
+    } else if (resolvedProvider === 'openai') {
         if (!config.openaiApiKey) throw new Error('Chave OpenAI não configurada. Acesse Configurações → IA.')
         baseModel = createOpenAI({ apiKey: config.openaiApiKey })(targetModelId)
+    } else {
+        throw new Error(`Provedor ${resolvedProvider} não suportado.`)
     }
     const model = await withDevTools(baseModel, { name: `chat:${agent.name}` })
 
-    console.log(`[ai-agents/chat] Using model: ${targetModelId} (provider: ${config.provider}), hasKB: ${hasKnowledgeBase}`)
+    console.log(`[ai-agents/chat] Using model: ${targetModelId} (provider: ${resolvedProvider}), hasKB: ${hasKnowledgeBase}`)
 
     // Preparar resposta estruturada
     let structuredResponse: ChatResponse | undefined
