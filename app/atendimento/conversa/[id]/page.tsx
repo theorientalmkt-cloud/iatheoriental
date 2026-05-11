@@ -27,6 +27,7 @@ import {
   Sparkles,
   Sun,
   Moon,
+  ShieldAlert,
 } from 'lucide-react'
 import { useAttendant } from '@/components/attendant/AttendantProvider'
 import { useTheme } from '../../layout'
@@ -462,13 +463,37 @@ export default function ConversaPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const { isAuthenticated, canReply, canHandoff } = useAttendant()
+  const { isReady, isValidating, isAuthenticated, error, canReply, canHandoff } = useAttendant()
   const { resolvedTheme, setTheme } = useTheme()
 
   const conversationId = params.id as string
   const token = searchParams.get('token')
   const [newMessage, setNewMessage] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Wait for provider to initialize and validate token
+  if (!isReady || isValidating) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--geist-background)]">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--geist-foreground-tertiary)] mb-4" />
+        <p style={{ color: 'var(--geist-foreground-secondary)' }}>Validando acesso...</p>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated || error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center bg-[var(--geist-background)]">
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-[var(--geist-error-light)]">
+          <ShieldAlert size={32} className="text-[var(--geist-error)]" />
+        </div>
+        <h1 className="text-xl font-semibold mb-2" style={{ color: 'var(--geist-foreground)' }}>Acesso Negado</h1>
+        <p className="mb-6 max-w-sm" style={{ color: 'var(--geist-foreground-secondary)' }}>
+          {error || 'Sessão inválida ou expirada.'}
+        </p>
+      </div>
+    )
+  }
 
   // Queries
   const { data: conversation, isLoading: convLoading, error: convError } = useQuery({
