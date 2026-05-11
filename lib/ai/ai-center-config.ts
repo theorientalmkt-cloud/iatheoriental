@@ -127,22 +127,25 @@ export async function getAiRoutesConfig(): Promise<AiRoutesConfig> {
   return cachedRoutes
 }
 
-/**
- * Retorna a configuração de provider direto, incluindo as chaves de API do Supabase.
- * As chaves não são expostas na UI — apenas presença é verificada.
- */
 export async function getAiDirectConfig(): Promise<AiDirectConfig> {
   if (cachedDirect && isCacheValid()) return cachedDirect
 
-  const [rawDirect, googleApiKey, geminiApiKeyLegacy, openaiApiKey] = await Promise.all([
+  const [rawDirect, dbGoogleApiKey, dbGeminiApiKeyLegacy, dbOpenaiApiKey] = await Promise.all([
     getSettingValue(SETTINGS_KEYS.direct),
     getSettingValue(SETTINGS_KEYS.googleApiKey),
     getSettingValue('gemini_api_key'), // retrocompatibilidade: chave pode estar salva com nome antigo
     getSettingValue(SETTINGS_KEYS.openaiApiKey),
   ])
 
+  // Fallbacks para variáveis de ambiente (Vercel) se não estiver configurado no banco
+  const envGoogleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY
+  const envOpenaiApiKey = process.env.OPENAI_API_KEY
+
+  const finalGoogleKey = dbGoogleApiKey || dbGeminiApiKeyLegacy || envGoogleApiKey
+  const finalOpenaiKey = dbOpenaiApiKey || envOpenaiApiKey
+
   const parsed = parseJsonSetting<Partial<Pick<AiDirectConfig, 'provider' | 'model'>>>(rawDirect, {})
-  cachedDirect = normalizeDirect(parsed, googleApiKey || geminiApiKeyLegacy, openaiApiKey)
+  cachedDirect = normalizeDirect(parsed, finalGoogleKey, finalOpenaiKey)
   cacheTime = Date.now()
   return cachedDirect
 }

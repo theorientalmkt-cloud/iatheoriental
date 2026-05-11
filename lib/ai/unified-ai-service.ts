@@ -54,29 +54,51 @@ export interface GenerateTextResult {
 }
 
 // =============================================================================
-// PROVIDER FACTORY
+// PROVIDER FACTORY (FAILOVER SYSTEM)
 // =============================================================================
 
 /**
- * Cria a instância do modelo de linguagem com base na configuração de provider.
- * Lança erro se a chave do provider não estiver configurada.
+ * Obtém os provedores disponíveis com base nas chaves configuradas.
+ * Tenta usar o provider principal primeiro, seguido do fallback.
  */
-function createModelInstance(config: AiDirectConfig, modelOverride?: string) {
-    const modelId = modelOverride || config.model
+function getAvailableProviders(config: AiDirectConfig, modelOverride?: string) {
+    const primaryProvider = config.provider
+    const primaryModel = modelOverride || config.model
 
-    if (config.provider === 'google') {
-        if (!config.googleApiKey) {
-            throw new Error('Chave Google não configurada. Acesse Configurações → IA e insira sua Google API Key.')
+    const providers: { name: string, modelId: string, instance: any }[] = []
+
+    const addGoogle = () => {
+        if (config.googleApiKey) {
+            const modelId = primaryProvider === 'google' ? primaryModel : 'gemini-2.5-flash'
+            providers.push({
+                name: 'google',
+                modelId,
+                instance: createGoogleGenerativeAI({ apiKey: config.googleApiKey })(modelId)
+            })
         }
-        const google = createGoogleGenerativeAI({ apiKey: config.googleApiKey })
-        return google(modelId)
     }
 
-    if (!config.openaiApiKey) {
-        throw new Error('Chave OpenAI não configurada. Acesse Configurações → IA e insira sua OpenAI API Key.')
+    const addOpenAI = () => {
+        if (config.openaiApiKey) {
+            const modelId = primaryProvider === 'openai' ? primaryModel : 'gpt-4o-mini'
+            providers.push({
+                name: 'openai',
+                modelId,
+                instance: createOpenAI({ apiKey: config.openaiApiKey })(modelId)
+            })
+        }
     }
-    const openai = createOpenAI({ apiKey: config.openaiApiKey })
-    return openai(modelId)
+
+    // Prioridade baseada na configuração
+    if (primaryProvider === 'google') {
+        addGoogle()
+        addOpenAI()
+    } else {
+        addOpenAI()
+        addGoogle()
+    }
+
+    return providers
 }
 
 // =============================================================================
@@ -85,30 +107,26 @@ function createModelInstance(config: AiDirectConfig, modelOverride?: string) {
 
 /**
  * Converte erros de provider em mensagens legíveis.
- * Trata 401 (chave inválida), 429 (rate limit) e 503 (serviço indisponível).
  */
-function handleProviderError(error: unknown, modelId: string): never {
+function formatProviderError(error: unknown, modelId: string): string {
     if (error && typeof error === 'object' && 'statusCode' in error) {
         const status = (error as { statusCode: number }).statusCode
         switch (status) {
-            case 401:
-                throw new Error(`[IA] Chave de API inválida para ${modelId}. Verifique nas configurações de IA.`)
-            case 429:
-                throw new Error(`[IA] Rate limit atingido para ${modelId}. Tente novamente em alguns segundos.`)
-            case 503:
-                throw new Error(`[IA] Serviço temporariamente indisponível para ${modelId}. Tente novamente em breve.`)
+            case 401: return `[IA] Chave de API inválida para ${modelId}.`
+            case 429: return `[IA] Rate limit atingido para ${modelId}.`
+            case 503: return `[IA] Serviço indisponível para ${modelId}.`
         }
     }
-    throw error
+    return error instanceof Error ? error.message : String(error)
 }
 
 type CallArgs =
-    | { model: ReturnType<typeof createModelInstance>; system: string | undefined; temperature: number; maxOutputTokens?: number; messages: ModelMessage[] }
-    | { model: ReturnType<typeof createModelInstance>; system: string | undefined; temperature: number; maxOutputTokens?: number; prompt: string }
+    | { model: any; system: string | undefined; temperature: number; maxOutputTokens?: number; messages: ModelMessage[] }
+    | { model: any; system: string | undefined; temperature: number; maxOutputTokens?: number; prompt: string }
 
 function buildArgs(
     options: GenerateTextOptions,
-    modelInstance: ReturnType<typeof createModelInstance>,
+    modelInstance: any,
 ): CallArgs {
     const base = {
         model: modelInstance,
@@ -125,52 +143,71 @@ function buildArgs(
 // MAIN API
 // =============================================================================
 
-/**
- * Gera texto usando o provider configurado (Google Gemini ou OpenAI).
- *
- * A chave de API é lida do Supabase — configurada pelo usuário nas settings de IA.
- */
 export async function generateText(options: GenerateTextOptions): Promise<GenerateTextResult> {
     const config = await getAiDirectConfig()
-    const modelId = options.model || config.model
-    console.log(`[AI Service] Generating with ${config.provider}/${modelId}`)
+    const availableProviders = getAvailableProviders(config, options.model)
 
-    const modelInstance = createModelInstance(config, modelId)
-
-    try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await vercelGenerateText(buildArgs(options, modelInstance) as any)
-        return { text: result.text, model: modelId }
-    } catch (error) {
-        handleProviderError(error, modelId)
+    if (availableProviders.length === 0) {
+        console.error('[AI Service] Nenhuma chave de API configurada (nem Google, nem OpenAI). Verifique as variáveis de ambiente na Vercel.')
+        return { text: "Sistema de IA temporariamente indisponível. Configuração de chave pendente.", model: "fallback-none" }
     }
+
+    let lastError: unknown
+
+    for (const provider of availableProviders) {
+        try {
+            console.log(`[AI Service] Tentando gerar com ${provider.name}/${provider.modelId}`)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await vercelGenerateText(buildArgs(options, provider.instance) as any)
+            return { text: result.text, model: provider.modelId }
+        } catch (error) {
+            console.warn(`[AI Service] Falha ao gerar com ${provider.name}:`, formatProviderError(error, provider.modelId))
+            lastError = error
+        }
+    }
+
+    console.error('[AI Service] Todos os provedores falharam para generateText.', lastError)
+    return { text: "Sistema de IA indisponível. Por favor, tente novamente mais tarde.", model: "error-fallback" }
 }
 
-/**
- * Gera texto em streaming usando o provider configurado.
- */
 export async function streamText(options: StreamTextOptions): Promise<GenerateTextResult> {
     const config = await getAiDirectConfig()
-    const modelId = options.model || config.model
-    console.log(`[AI Service] Streaming with ${config.provider}/${modelId}`)
+    const availableProviders = getAvailableProviders(config, options.model)
 
-    const modelInstance = createModelInstance(config, modelId)
+    const fallbackText = "Sistema de IA indisponível no momento. Por favor, avise um atendente."
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = vercelStreamText(buildArgs(options, modelInstance) as any)
-
-    let fullText = ''
-    try {
-        for await (const part of result.textStream) {
-            fullText += part
-            options.onChunk?.(part)
-        }
-    } catch (error) {
-        handleProviderError(error, modelId)
+    if (availableProviders.length === 0) {
+        console.error('[AI Service] Nenhuma chave de API configurada para streaming.')
+        options.onChunk?.(fallbackText)
+        options.onComplete?.(fallbackText)
+        return { text: fallbackText, model: "fallback-none" }
     }
 
-    options.onComplete?.(fullText)
-    return { text: fullText, model: modelId }
+    let lastError: unknown
+
+    for (const provider of availableProviders) {
+        try {
+            console.log(`[AI Service] Tentando streaming com ${provider.name}/${provider.modelId}`)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = vercelStreamText(buildArgs(options, provider.instance) as any)
+
+            let fullText = ''
+            for await (const part of result.textStream) {
+                fullText += part
+                options.onChunk?.(part)
+            }
+            options.onComplete?.(fullText)
+            return { text: fullText, model: provider.modelId }
+        } catch (error) {
+            console.warn(`[AI Service] Falha no streaming com ${provider.name}:`, formatProviderError(error, provider.modelId))
+            lastError = error
+        }
+    }
+
+    console.error('[AI Service] Todos os provedores falharam para streamText.', lastError)
+    options.onChunk?.(fallbackText)
+    options.onComplete?.(fallbackText)
+    return { text: fallbackText, model: "error-fallback" }
 }
 
 /**
@@ -183,6 +220,10 @@ export async function generateJSON<T = unknown>(options: GenerateTextOptions): P
         ...options,
         system: (options.system || '') + '\n\nRespond with valid JSON only, no markdown.',
     })
+
+    if (result.model === 'fallback-none' || result.model === 'error-fallback') {
+        throw new Error('AI providers unavailable for JSON generation')
+    }
 
     try {
         const cleanText = result.text
