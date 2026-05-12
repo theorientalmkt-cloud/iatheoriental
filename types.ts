@@ -592,6 +592,7 @@ export interface AIAgent {
   id: string;
   name: string;
   system_prompt: string;
+  provider?: string | null;
   model: string;
   temperature: number;
   max_tokens: number;

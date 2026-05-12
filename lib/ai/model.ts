@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod'
+import { getDefaultModel } from './providers'
 
 // =============================================================================
 // Model Configuration Schema

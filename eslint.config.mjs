@@ -1,5 +1,6 @@
 import nextPlugin from '@next/eslint-plugin-next'
 import tseslint from 'typescript-eslint'
+import reactHooks from 'eslint-plugin-react-hooks'
 
 export default [
   {
@@ -37,6 +38,7 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tseslint.plugin,
+      'react-hooks': reactHooks,
     },
     rules: {
       // Keep the lint lightweight; this repo currently contains many intentional anys/unuseds.
@@ -44,6 +46,7 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/ban-ts-comment': 'off',
       '@typescript-eslint/no-require-imports': 'off',
+      'react-hooks/exhaustive-deps': 'off',
     },
   },
 ]
