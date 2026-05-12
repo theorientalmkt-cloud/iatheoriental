@@ -33,7 +33,7 @@ export interface GenerateTextOptions {
     messages?: ChatMessage[];
     /** Instrução de sistema (contexto) enviada ao modelo. */
     system?: string;
-    /** Sobrescreve o modelo configurado nas settings (formato bare, ex: 'gemini-2.5-flash'). */
+    /** Sobrescreve o modelo configurado nas settings (formato bare, ex: 'gemini-1.5-flash'). */
     model?: string;
     /** Máximo de tokens de saída. */
     maxOutputTokens?: number;
@@ -69,7 +69,7 @@ function getAvailableProviders(config: AiDirectConfig, modelOverride?: string) {
 
     const addGoogle = () => {
         if (config.googleApiKey) {
-            const modelId = primaryProvider === 'google' ? primaryModel : 'gemini-2.5-flash'
+            const modelId = primaryProvider === 'google' ? primaryModel : 'gemini-1.5-flash'
             providers.push({
                 name: 'google',
                 modelId,

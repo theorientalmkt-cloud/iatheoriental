@@ -4,6 +4,7 @@ import { UTILITY_JUDGE_PROMPT_TEMPLATE } from './prompts/utility-judge'
 import { MARKETING_PROMPT } from './prompts/marketing'
 import { UTILITY_PROMPT } from './prompts/utility'
 import { BYPASS_PROMPT } from './prompts/bypass'
+import { getDefaultModel } from './providers'
 
 export type AiRoutesConfig = {
   generateUtilityTemplates: boolean
@@ -48,7 +49,7 @@ export const DEFAULT_AI_ROUTES: AiRoutesConfig = {
 /** Default: Google Gemini 2.5 Flash. Requer `google_api_key` configurado no Supabase. */
 export const DEFAULT_AI_DIRECT: AiDirectConfig = {
   provider: 'google',
-  model: 'gemini-2.5-flash',
+  model: getDefaultModel('google')?.id || 'gemini-1.5-flash',
 }
 
 export const DEFAULT_AI_PROMPTS: AiPromptsConfig = {

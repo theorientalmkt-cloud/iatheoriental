@@ -47,20 +47,20 @@ type PromptItem = {
 // Modelos Gemini disponíveis para OCR
 const OCR_GEMINI_MODELS = [
   {
-    id: 'gemini-2.5-flash-lite',
-    name: 'Gemini 2.5 Flash Lite',
+    id: 'gemini-1.5-flash-lite',
+    name: 'Gemini 1.5 Flash Lite',
     price: '$0.02/1M',
     desc: 'Mais barato, OCR básico',
   },
   {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
     price: '$0.10/1M',
     desc: 'Recomendado - bom custo/benefício',
   },
   {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
+    id: 'gemini-1.5-pro',
+    name: 'Gemini 1.5 Pro',
     price: '$1.25/1M',
     desc: 'Alta qualidade (tabelas complexas)',
   },

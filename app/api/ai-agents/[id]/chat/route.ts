@@ -243,19 +243,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const resolvedProvider = agent.provider || config.provider || 'google'
     const targetModelId = agent.model || config.model || DEFAULT_MODEL_ID
     
+    // Nível de API (Sanitização): Converter modelos inexistentes para estáveis
+    let sanitizedModelId = targetModelId
+    if (sanitizedModelId === 'gemini-2.5-flash' || sanitizedModelId === 'gemini-2.5-pro' || sanitizedModelId === 'gemini-2.5-flash-lite') {
+      sanitizedModelId = resolvedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash'
+    }
+    
     let baseModel
     if (resolvedProvider === 'google') {
         if (!config.googleApiKey) throw new Error('Chave Google não configurada. Acesse Configurações → IA.')
-        baseModel = createGoogleGenerativeAI({ apiKey: config.googleApiKey })(targetModelId)
+        baseModel = createGoogleGenerativeAI({ apiKey: config.googleApiKey })(sanitizedModelId)
     } else if (resolvedProvider === 'openai') {
         if (!config.openaiApiKey) throw new Error('Chave OpenAI não configurada. Acesse Configurações → IA.')
-        baseModel = createOpenAI({ apiKey: config.openaiApiKey })(targetModelId)
+        baseModel = createOpenAI({ apiKey: config.openaiApiKey })(sanitizedModelId)
     } else {
         throw new Error(`Provedor ${resolvedProvider} não suportado.`)
     }
     const model = await withDevTools(baseModel, { name: `chat:${agent.name}` })
 
-    console.log(`[ai-agents/chat] Using model: ${targetModelId} (provider: ${resolvedProvider}), hasKB: ${hasKnowledgeBase}`)
+    console.log(`[ai-agents/chat] Using model: ${sanitizedModelId} (provider: ${resolvedProvider}), hasKB: ${hasKnowledgeBase}`)
 
     // Preparar resposta estruturada
     let structuredResponse: ChatResponse | undefined
@@ -377,7 +383,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       // Metadados
       latency_ms: latencyMs,
-      model: targetModelId,
+      model: sanitizedModelId,
       session_id: sessionId,
 
       // Análise

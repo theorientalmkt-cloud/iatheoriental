@@ -282,7 +282,7 @@ CREATE TABLE public.ai_agents (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
     system_prompt text NOT NULL,
-    model text DEFAULT 'gemini-2.5-flash'::text NOT NULL,
+    model text DEFAULT 'gemini-1.5-flash'::text NOT NULL,
     temperature real DEFAULT 0.7 NOT NULL,
     max_tokens integer DEFAULT 1024 NOT NULL,
     embedding_provider text DEFAULT 'google'::text,

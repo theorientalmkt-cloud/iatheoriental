@@ -80,7 +80,7 @@ export function registerSettingsTools(server: McpServer) {
         'Configura provider (google/openai), modelo, chaves de API e rotas de IA. Valida a chave antes de salvar.',
       inputSchema: {
         provider: z.enum(['google', 'openai']).optional().describe('Provider de IA'),
-        model: z.string().optional().describe('Model ID (ex: gemini-2.5-flash, gpt-4o)'),
+        model: z.string().optional().describe('Model ID (ex: gemini-1.5-flash, gpt-4o)'),
         google_api_key: z.string().optional().describe('Chave API do Google Gemini'),
         openai_api_key: z.string().optional().describe('Chave API da OpenAI'),
         routes: z

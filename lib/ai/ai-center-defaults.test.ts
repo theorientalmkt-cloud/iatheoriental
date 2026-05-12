@@ -14,8 +14,8 @@ describe('DEFAULT_AI_DIRECT', () => {
     expect(DEFAULT_AI_DIRECT.provider).toBe('google')
   })
 
-  it('deve usar gemini-2.5-flash como modelo padrão', () => {
-    expect(DEFAULT_AI_DIRECT.model).toBe('gemini-2.5-flash')
+  it('deve usar gemini-1.5-flash como modelo padrão', () => {
+    expect(DEFAULT_AI_DIRECT.model).toBe('gemini-1.5-flash')
   })
 
   it('não deve ter chaves de API definidas no default', () => {

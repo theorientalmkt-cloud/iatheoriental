@@ -16,7 +16,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import type { OCRProvider, OCRProcessParams, OCRResult } from '../types'
 
 /** Modelo padrão para OCR - bom custo/benefício */
-export const DEFAULT_OCR_MODEL = 'gemini-2.5-flash'
+export const DEFAULT_OCR_MODEL = 'gemini-1.5-flash'
 
 /** Prompt otimizado para extração de texto */
 const OCR_PROMPT = `Extract ALL text content from this document/image.

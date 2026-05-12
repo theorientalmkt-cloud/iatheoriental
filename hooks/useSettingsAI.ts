@@ -47,7 +47,7 @@ const DEFAULT_KEY_STATE: KeyState = {
 
 const DEFAULT_OCR_CONFIG: OCRConfig = {
   provider: 'gemini',
-  geminiModel: 'gemini-2.5-flash',
+  geminiModel: 'gemini-1.5-flash',
 }
 
 // =============================================================================
