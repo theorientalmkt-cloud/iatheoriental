@@ -280,7 +280,8 @@ export function useCalendarBooking({
       const message = error instanceof Error ? error.message : 'Falha ao carregar status';
       setCalendarAuthError(message);
       setCalendarWizardError(message);
-      setCalendarAuthStatus(null);
+      // Mantém o último estado conhecido em vez de apagar (evita flicker "Desconectado")
+      setCalendarAuthStatus((prev) => prev);
     } finally {
       setCalendarAuthLoading(false);
     }
@@ -300,7 +301,8 @@ export function useCalendarBooking({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao carregar credenciais';
       setCalendarCredsError(message);
-      setCalendarCredsStatus(null);
+      // Mantém o último estado conhecido em vez de apagar (evita flicker "Não configurado")
+      setCalendarCredsStatus((prev) => prev);
     } finally {
       setCalendarCredsLoading(false);
     }
