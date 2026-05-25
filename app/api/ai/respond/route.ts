@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { inboxDb } from '@/lib/inbox/inbox-db'
-import { processChatAgent, type ContactContext } from '@/lib/ai/agents/chat-agent'
+import { processChatAgent, cancelDebounce, type ContactContext } from '@/lib/ai/agents/chat-agent'
 import { sendWhatsAppMessage, sendTypingIndicator } from '@/lib/whatsapp-send'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { redis } from '@/lib/redis'
@@ -268,6 +268,9 @@ export async function POST(req: NextRequest) {
     if (result.response.shouldHandoff) {
       console.log(`🔄 [AI-RESPOND] Processing handoff request...`)
 
+      // Cancela qualquer debounce pendente para evitar resposta extra após o handoff
+      cancelDebounce(conversationId)
+
       await inboxDb.updateConversation(conversationId, { mode: 'human' })
 
       await inboxDb.createMessage({
@@ -378,6 +381,9 @@ async function handleAutoHandoff(
   errorMessage: string
 ): Promise<void> {
   console.log(`🚨 [AI-RESPOND] Auto-handoff due to error: ${errorMessage}`)
+
+  // Cancela qualquer debounce pendente para evitar resposta extra após o handoff
+  cancelDebounce(conversationId)
 
   const fallbackMessage =
     'Desculpe, estou com dificuldades técnicas. Vou transferir você para um atendente.'
