@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createOAuthState, buildGoogleCalendarAuthUrl } from '@/lib/google-calendar'
-
-const STATE_COOKIE = 'gc_oauth_state'
-const RETURN_COOKIE = 'gc_oauth_return'
+import { settingsDb } from '@/lib/supabase-db'
 
 function normalizeReturnTo(value: string | null): string {
   if (!value) return '/settings'
@@ -17,20 +15,13 @@ export async function GET(request: NextRequest) {
     const authUrl = await buildGoogleCalendarAuthUrl(state)
     const returnTo = normalizeReturnTo(request.nextUrl.searchParams.get('returnTo'))
 
-    const response = NextResponse.redirect(authUrl)
-    response.cookies.set(STATE_COOKIE, state, {
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 10 * 60,
-      path: '/',
-    })
-    response.cookies.set(RETURN_COOKIE, returnTo, {
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 10 * 60,
-      path: '/',
-    })
-    return response
+    await settingsDb.set('gc_oauth_state', JSON.stringify({
+      state,
+      returnTo,
+      createdAt: Date.now(),
+    }))
+
+    return NextResponse.redirect(authUrl)
   } catch (error) {
     console.error('[google-calendar] connect error:', error)
     return NextResponse.json({ error: 'Falha ao iniciar OAuth' }, { status: 500 })
