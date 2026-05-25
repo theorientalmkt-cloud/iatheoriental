@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { settingsDb } from '@/lib/supabase-db'
 import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 import { checkBookingPrerequisites } from '@/lib/ai/tools/booking-tool'
+import { checkTextBookingPrerequisites } from '@/lib/ai/tools/calendar-text-booking-tool'
 
 const BOOKING_FLOW_ID_KEY = 'booking_flow_id'
 
@@ -25,8 +26,18 @@ export async function GET() {
       }, { status: 400 })
     }
 
-    // Get prerequisites status
-    const prereqs = await checkBookingPrerequisites()
+    // Check both Flow and text-based booking prerequisites
+    const [flowPrereqs, textPrereqs] = await Promise.all([
+      checkBookingPrerequisites(),
+      checkTextBookingPrerequisites(),
+    ])
+
+    // Ready if EITHER Flow OR text-based booking is available
+    const prereqs = flowPrereqs.ready
+      ? flowPrereqs
+      : textPrereqs.ready
+        ? { ready: true, missing: [], details: textPrereqs.details }
+        : flowPrereqs
 
     // Get current booking flow ID
     const bookingFlowId = await settingsDb.get(BOOKING_FLOW_ID_KEY)
@@ -57,6 +68,10 @@ export async function GET() {
         flowDetails,
       },
       prerequisites: prereqs,
+      textBooking: {
+        ready: textPrereqs.ready,
+        missing: textPrereqs.missing,
+      },
       availableFlows: availableFlows || [],
     })
   } catch (error) {
