@@ -197,8 +197,10 @@ export type SupportResponse = z.infer<typeof supportResponseSchema>
 
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_TOKENS = 2048
-const AI_TIMEOUT_MS = 90_000 // 90 segundos - timeout para chamadas de IA (considera RAG + tools)
+const AI_TIMEOUT_MS = 30_000 // 30s - timeout por tentativa de chamada à IA
 const MAX_TOOL_RETRIES = 2 // Tentativas extras quando LLM não chama respond tool
+const MAX_PROVIDER_RETRIES = 2 // Tentativas extras em erro/timeout do provider (rate-limit, rede)
+const PROVIDER_RETRY_BACKOFF_MS = 800 // Backoff base entre tentativas (dobra a cada retry)
 
 /**
  * Converte formatação Markdown para WhatsApp.
@@ -423,7 +425,8 @@ export async function processChatAgent(
 
     // Define respond tool (required for structured output)
     // Schema é dinâmico baseado em handoff_enabled
-    const handoffEnabled = agent.handoff_enabled ?? true // default true para compatibilidade
+    // Default false: handoff agora é opt-in. Evita LLMs com prompt fraco transferirem sem motivo.
+    const handoffEnabled = agent.handoff_enabled ?? false
 
     // Build system prompt: base + contact context + handoff instructions + memory context
     let systemPrompt = agent.system_prompt
@@ -538,19 +541,22 @@ export async function processChatAgent(
       tools.searchKnowledgeBase = searchKnowledgeBaseTool
     }
 
-    // Booking Flow tool - only created if agent has booking tool enabled
+    // Booking tools - only created if agent has booking tool enabled.
+    // Registra duas vias em paralelo:
+    //   A) Flow form (mini-app Meta) — requer Flow aprovado pela Meta
+    //   B) Booking por texto (checkAvailability + confirmBooking) — só requer Calendar conectado
+    // O LLM escolhe a via mais apropriada baseado no prompt e disponibilidade.
     if (agent.booking_tool_enabled) {
-      console.log(`[chat-agent] 📅 Booking tool is enabled, checking prerequisites...`)
+      console.log(`[chat-agent] 📅 Booking tool enabled, checking prerequisites...`)
+
+      // --- Via A: Flow form ---
       const { sendBookingFlow, checkBookingPrerequisites, BOOKING_TOOL_DESCRIPTION } = await import('@/lib/ai/tools/booking-tool')
+      const flowPrereqs = await checkBookingPrerequisites()
+      console.log(`[chat-agent] 📅 Flow prereqs: ready=${flowPrereqs.ready}, missing=${flowPrereqs.missing.join(', ') || 'none'}`)
 
-      // Check if prerequisites are met (async check)
-      const prereqs = await checkBookingPrerequisites()
-      console.log(`[chat-agent] 📅 Prerequisites check: ready=${prereqs.ready}, missing=${prereqs.missing.join(', ') || 'none'}`)
-
-      if (prereqs.ready) {
+      if (flowPrereqs.ready) {
         const sendBookingFlowTool = tool({
           description: BOOKING_TOOL_DESCRIPTION,
-          // Schema com campo opcional - alguns providers não lidam bem com schemas vazios
           inputSchema: z.object({
             confirm: z.boolean().optional().describe('Confirmação para enviar o formulário de agendamento (sempre true)')
           }),
@@ -573,9 +579,68 @@ export async function processChatAgent(
           },
         })
         tools.sendBookingFlow = sendBookingFlowTool
-        console.log(`[chat-agent] 📅 Booking tool added to tools list`)
-      } else {
-        console.log(`[chat-agent] ⚠️ Booking tool enabled but prerequisites not met: ${prereqs.missing.join(', ')}`)
+        console.log(`[chat-agent] 📅 sendBookingFlow tool added`)
+      }
+
+      // --- Via B: Booking por texto (checkAvailability + confirmBooking) ---
+      const {
+        checkAvailability,
+        confirmBooking,
+        checkTextBookingPrerequisites,
+        CHECK_AVAILABILITY_DESCRIPTION,
+        CONFIRM_BOOKING_DESCRIPTION,
+      } = await import('@/lib/ai/tools/calendar-text-booking-tool')
+
+      const textPrereqs = await checkTextBookingPrerequisites()
+      console.log(`[chat-agent] 📅 Text booking prereqs: ready=${textPrereqs.ready}, missing=${textPrereqs.missing.join(', ') || 'none'}`)
+
+      if (textPrereqs.ready) {
+        const checkAvailabilityTool = tool({
+          description: CHECK_AVAILABILITY_DESCRIPTION,
+          inputSchema: z.object({
+            daysAhead: z.number().int().min(1).max(30).optional().describe('Quantos dias à frente consultar (padrão: 7)'),
+            preferredDate: z.string().optional().describe('Data específica solicitada pelo cliente (formato YYYY-MM-DD)'),
+          }),
+          execute: async ({ daysAhead, preferredDate }) => {
+            console.log(`[chat-agent] 📅 LLM requested availability check: daysAhead=${daysAhead}, preferredDate=${preferredDate}`)
+            const result = await checkAvailability({ daysAhead, preferredDate })
+            console.log(`[chat-agent] 📅 Availability: available=${result.available}, slots=${result.slots.length}`)
+            return result
+          },
+        })
+        tools.checkAvailability = checkAvailabilityTool
+
+        const confirmBookingTool = tool({
+          description: CONFIRM_BOOKING_DESCRIPTION,
+          inputSchema: z.object({
+            slotStart: z.string().describe('ISO string exato do slot escolhido (retornado por checkAvailability)'),
+            customerName: z.string().describe('Nome completo do cliente'),
+            service: z.string().optional().describe('Tipo de serviço (ex: consulta, visita, suporte)'),
+            notes: z.string().optional().describe('Observações adicionais do agendamento'),
+          }),
+          execute: async ({ slotStart, customerName, service, notes }) => {
+            console.log(`[chat-agent] 📅 LLM requested confirmBooking: ${customerName} @ ${slotStart}`)
+            const result = await confirmBooking({
+              slotStart,
+              customerName,
+              customerPhone: conversation.phone,
+              service,
+              notes,
+            })
+            if (result.success) {
+              console.log(`[chat-agent] ✅ Booking confirmed: ${result.eventId}`)
+            } else {
+              console.log(`[chat-agent] ❌ Booking failed: ${result.error}`)
+            }
+            return result
+          },
+        })
+        tools.confirmBooking = confirmBookingTool
+        console.log(`[chat-agent] 📅 checkAvailability + confirmBooking tools added`)
+      }
+
+      if (!flowPrereqs.ready && !textPrereqs.ready) {
+        console.log(`[chat-agent] ⚠️ Booking enabled but nenhuma via disponível. Flow missing: ${flowPrereqs.missing.join(', ')}. Text missing: ${textPrereqs.missing.join(', ')}`)
       }
     }
 
@@ -665,13 +730,6 @@ export async function processChatAgent(
     let lastLLMText = '' // Guarda texto que o LLM gerou sem chamar tool
 
     while (!hasResponded && retryCount <= MAX_TOOL_RETRIES) {
-      // Timeout AbortController - previne que chamadas de IA fiquem penduradas
-      const abortController = new AbortController()
-      const timeoutId = setTimeout(() => {
-        console.error(`[chat-agent] ⏱️ AI call timed out after ${AI_TIMEOUT_MS}ms`)
-        abortController.abort()
-      }, AI_TIMEOUT_MS)
-
       // Se é retry, adiciona instrução reforçada ao system prompt
       let currentSystemPrompt = systemPrompt
       // Usa cópia do array base para não acumular contexto de retries entre iterações
@@ -696,74 +754,118 @@ export async function processChatAgent(
         }
       }
 
-      try {
-        const result = await generateText({
-          model,
-          system: currentSystemPrompt,
-          messages: currentMessages,
-          tools,
-          toolChoice: 'required', // FORÇA o LLM a chamar uma tool (respond)
-          // Para quando respond for chamado OU após 3 steps (o que vier primeiro)
-          stopWhen: (event) => stopCondition() || stepCountIs(3)(event),
-          temperature: agent.temperature ?? DEFAULT_TEMPERATURE,
-          maxOutputTokens: agent.max_tokens ?? DEFAULT_MAX_TOKENS,
-          abortSignal: abortController.signal,
-        })
+      // =====================================================================
+      // PROVIDER RETRY: tenta novamente em erro/timeout do provider antes
+      // de propagar pro catch externo (que faria handoff automático).
+      // Trata: timeout (abort), erros transitórios (rate-limit, rede),
+      // e finishReason === 'error' (provider sinalizou falha no resultado).
+      // =====================================================================
+      let providerAttempt = 0
+      let providerSuccess = false
+      let lastProviderError: unknown = null
 
-        clearTimeout(timeoutId) // Limpa timeout se completou
+      while (providerAttempt <= MAX_PROVIDER_RETRIES && !providerSuccess) {
+        // AbortController por tentativa - cada retry tem timeout próprio
+        const abortController = new AbortController()
+        const timeoutId = setTimeout(() => {
+          console.error(`[chat-agent] ⏱️ AI call timed out after ${AI_TIMEOUT_MS}ms (attempt ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES + 1})`)
+          abortController.abort()
+        }, AI_TIMEOUT_MS)
 
-        const attemptLabel = retryCount === 0 ? '' : ` (retry ${retryCount})`
-        console.log(`[chat-agent] ✅ generateText completed${attemptLabel} in ${Date.now() - startGenerate}ms`)
-        console.log(`[chat-agent] Steps executed: ${result.steps?.length || 0}`)
-        console.log(`[chat-agent] Tool calls: ${JSON.stringify(result.steps?.map(s => s.toolCalls?.map(tc => tc.toolName)).flat().filter(Boolean) || [])}`)
-        console.log(`[chat-agent] Finish reason: ${result.finishReason}`)
-
-        // 🔍 DIAGNÓSTICO: Log completo quando finishReason é error
-        if (result.finishReason === 'error') {
-          console.error(`[chat-agent] 🔴 PROVIDER ERROR DETAILS:`)
-          console.error(`[chat-agent] - finishReason: ${result.finishReason}`)
-          console.error(`[chat-agent] - text: ${result.text?.slice(0, 200) || 'none'}`)
-          console.error(`[chat-agent] - response headers: ${JSON.stringify(result.response?.headers || {})}`)
-          console.error(`[chat-agent] - warnings: ${JSON.stringify(result.warnings || [])}`)
-          console.error(`[chat-agent] - usage: ${JSON.stringify(result.usage || {})}`)
-          // Log raw response se existir
-          if (result.response?.body) {
-            console.error(`[chat-agent] - raw body available: true`)
-          }
-          // Log cada step em detalhe
-          result.steps?.forEach((step, i) => {
-            console.error(`[chat-agent] - Step ${i + 1} details:`, JSON.stringify({
-              finishReason: step.finishReason,
-              text: step.text?.slice(0, 100),
-              toolCalls: step.toolCalls?.length || 0,
-              warnings: step.warnings,
-            }))
+        try {
+          const result = await generateText({
+            model,
+            system: currentSystemPrompt,
+            messages: currentMessages,
+            tools,
+            toolChoice: 'required', // FORÇA o LLM a chamar uma tool (respond)
+            // Para quando respond for chamado OU após 3 steps (o que vier primeiro)
+            stopWhen: (event) => stopCondition() || stepCountIs(3)(event),
+            temperature: agent.temperature ?? DEFAULT_TEMPERATURE,
+            maxOutputTokens: agent.max_tokens ?? DEFAULT_MAX_TOKENS,
+            abortSignal: abortController.signal,
           })
+
+          // Detecta erro sinalizado pelo provider no próprio resultado
+          if (result.finishReason === 'error') {
+            console.error(`[chat-agent] 🔴 PROVIDER ERROR DETAILS (attempt ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES + 1}):`)
+            console.error(`[chat-agent] - finishReason: ${result.finishReason}`)
+            console.error(`[chat-agent] - text: ${result.text?.slice(0, 200) || 'none'}`)
+            console.error(`[chat-agent] - response headers: ${JSON.stringify(result.response?.headers || {})}`)
+            console.error(`[chat-agent] - warnings: ${JSON.stringify(result.warnings || [])}`)
+            console.error(`[chat-agent] - usage: ${JSON.stringify(result.usage || {})}`)
+            result.steps?.forEach((step, i) => {
+              console.error(`[chat-agent] - Step ${i + 1} details:`, JSON.stringify({
+                finishReason: step.finishReason,
+                text: step.text?.slice(0, 100),
+                toolCalls: step.toolCalls?.length || 0,
+                warnings: step.warnings,
+              }))
+            })
+
+            // Trata como erro do provider — agenda retry se ainda houver tentativas
+            lastProviderError = new Error(`Provider returned finishReason=error`)
+            if (providerAttempt < MAX_PROVIDER_RETRIES) {
+              const backoff = PROVIDER_RETRY_BACKOFF_MS * Math.pow(2, providerAttempt)
+              console.warn(`[chat-agent] ⏳ Provider error, retry ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES} in ${backoff}ms`)
+              clearTimeout(timeoutId)
+              await new Promise((r) => setTimeout(r, backoff))
+              providerAttempt++
+              continue
+            }
+            // Esgotou tentativas: propaga pro catch externo
+            clearTimeout(timeoutId)
+            throw lastProviderError
+          }
+
+          clearTimeout(timeoutId) // Limpa timeout - sucesso real
+
+          const attemptLabel = retryCount === 0 && providerAttempt === 0
+            ? ''
+            : ` (toolRetry=${retryCount}, providerRetry=${providerAttempt})`
+          console.log(`[chat-agent] ✅ generateText completed${attemptLabel} in ${Date.now() - startGenerate}ms`)
+          console.log(`[chat-agent] Steps executed: ${result.steps?.length || 0}`)
+          console.log(`[chat-agent] Tool calls: ${JSON.stringify(result.steps?.map(s => s.toolCalls?.map(tc => tc.toolName)).flat().filter(Boolean) || [])}`)
+          console.log(`[chat-agent] Finish reason: ${result.finishReason}`)
+
+          // Log each step for debugging
+          result.steps?.forEach((step, i) => {
+            console.log(`[chat-agent] Step ${i + 1}: toolCalls=${step.toolCalls?.map(tc => tc.toolName).join(', ') || 'none'}, text=${step.text?.slice(0, 50) || 'none'}...`)
+          })
+
+          // Se LLM retornou texto mas não chamou respond, guarda para retry
+          if (!hasResponded && result.text) {
+            lastLLMText = result.text
+            console.log(`[chat-agent] ⚠️ LLM retornou texto sem chamar respond: "${result.text.slice(0, 100)}..."`)
+          }
+
+          providerSuccess = true
+        } catch (genError) {
+          clearTimeout(timeoutId)
+          const elapsed = Date.now() - startGenerate
+          lastProviderError = genError
+
+          const isTimeout = abortController.signal.aborted
+          if (isTimeout) {
+            console.error(`[chat-agent] ❌ generateText ABORTED (timeout) after ${elapsed}ms (attempt ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES + 1})`)
+          } else {
+            console.error(`[chat-agent] ❌ generateText failed after ${elapsed}ms (attempt ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES + 1}):`, genError)
+          }
+
+          if (providerAttempt < MAX_PROVIDER_RETRIES) {
+            const backoff = PROVIDER_RETRY_BACKOFF_MS * Math.pow(2, providerAttempt)
+            console.warn(`[chat-agent] ⏳ Retrying provider in ${backoff}ms...`)
+            await new Promise((r) => setTimeout(r, backoff))
+            providerAttempt++
+            continue
+          }
+
+          // Esgotou retries de provider: propaga pro catch externo (handoff)
+          if (isTimeout) {
+            throw new Error(`AI call timed out after ${MAX_PROVIDER_RETRIES + 1} attempts of ${AI_TIMEOUT_MS / 1000}s each`)
+          }
+          throw genError
         }
-
-        // Log each step for debugging
-        result.steps?.forEach((step, i) => {
-          console.log(`[chat-agent] Step ${i + 1}: toolCalls=${step.toolCalls?.map(tc => tc.toolName).join(', ') || 'none'}, text=${step.text?.slice(0, 50) || 'none'}...`)
-        })
-
-        // Se LLM retornou texto mas não chamou respond, guarda para retry
-        if (!hasResponded && result.text) {
-          lastLLMText = result.text
-          console.log(`[chat-agent] ⚠️ LLM retornou texto sem chamar respond: "${result.text.slice(0, 100)}..."`)
-        }
-
-      } catch (genError) {
-        clearTimeout(timeoutId) // Limpa timeout em caso de erro
-        const elapsed = Date.now() - startGenerate
-
-        // Detecta se foi timeout
-        if (abortController.signal.aborted) {
-          console.error(`[chat-agent] ❌ generateText ABORTED (timeout) after ${elapsed}ms`)
-          throw new Error(`AI call timed out after ${AI_TIMEOUT_MS / 1000}s`)
-        }
-
-        console.error(`[chat-agent] ❌ generateText failed after ${elapsed}ms:`, genError)
-        throw genError
       }
 
       retryCount++
@@ -841,14 +943,15 @@ export async function processChatAgent(
     return { success: true, response, latencyMs, logId }
   }
 
-  // Error case - auto handoff
-  const handoffResponse: SupportResponse = {
-    message: 'Desculpe, estou com dificuldades técnicas. Vou transferir você para um atendente.',
+  // Error case - fallback amigável (sem handoff automático).
+  // Handoff só acontece quando o LLM decide explicitamente (shouldHandoff=true em response)
+  // ou quando o operador transfere manualmente. Erros transitórios pedem retry do usuário,
+  // não escalonamento — evita inchar a fila humana por hiccup técnico.
+  const fallbackResponse: SupportResponse = {
+    message: 'Tive um problema técnico momentâneo. Pode repetir sua última mensagem, por favor?',
     sentiment: 'neutral',
     confidence: 0,
-    shouldHandoff: true,
-    handoffReason: `Erro técnico: ${error}`,
-    handoffSummary: `Erro durante processamento. Última mensagem: "${inputText.slice(0, 200)}"`,
+    shouldHandoff: false,
   }
 
   const logId = await persistAILog({
@@ -856,7 +959,7 @@ export async function processChatAgent(
     agentId: agent.id,
     messageIds,
     input: inputText,
-    output: handoffResponse,
+    output: fallbackResponse,
     latencyMs,
     error,
     modelUsed: modelId,
@@ -864,7 +967,7 @@ export async function processChatAgent(
 
   return {
     success: false,
-    response: handoffResponse,
+    response: fallbackResponse,
     error: error || 'Unknown error',
     latencyMs,
     logId,
