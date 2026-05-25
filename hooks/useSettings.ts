@@ -139,7 +139,7 @@ export const useSettingsController = () => {
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
     staleTime: 0,
-    retry: false,
+    retry: 1,
   });
 
   // Phone numbers query (dependent on isConnected)
