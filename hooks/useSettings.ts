@@ -858,4 +858,4 @@ export const useSettingsController = () => {
     isSavingUpstashConfig: saveUpstashConfigMutation.isPending,
 
   };
-};  
+};
