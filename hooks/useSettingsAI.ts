@@ -239,12 +239,16 @@ export const useSettingsAIController = () => {
     setIsSaving(true)
     setErrorMessage(null)
     try {
-      await settingsService.saveAIConfig({ provider, model, routes, prompts })
+      // IMPORTANTE: NÃO envia provider/model aqui.
+      // O AIGatewayPanel já auto-salva model/provider quando o usuário clica
+      // num modelo da lista. Se enviarmos do estado local aqui, vamos sobrescrever
+      // a seleção do painel com o valor antigo carregado em loadConfig.
+      // Esse botão "Salvar" do rodapé só persiste routes (rotas de IA) e prompts.
+      await settingsService.saveAIConfig({ routes, prompts })
       toast.success('Configurações salvas')
       await loadConfig()
       // Invalida o cache do React Query de allSettings — outras telas
       // (settings principal, sidebar) refletem a mudança imediatamente.
-      // Sem isso, navegar pra outra tela mostra config antiga por até 30s.
       await queryClient.invalidateQueries({ queryKey: ['allSettings'] })
     } catch (error) {
       const message =
