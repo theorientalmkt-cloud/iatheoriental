@@ -453,6 +453,17 @@ export async function processChatAgent(
     if (memoryContext.systemPromptAddition) {
       systemPrompt += `\n\n${memoryContext.systemPromptAddition}`
     }
+
+    // Reforço de idioma: garante português brasileiro com acentuação correta,
+    // independente de como o operador escreveu o system_prompt do agente.
+    // Sem isso, o LLM tende a mimetizar prompts escritos sem acento.
+    systemPrompt += `\n\n## Idioma e Ortografia
+Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação completas e corretas.
+- Use ç, ã, õ, á, é, í, ó, ú, â, ê, ô, à conforme as regras da norma culta.
+- Exemplos do certo: "você" (não "voce"), "não" (não "nao"), "está" (não "esta" como verbo), "atenção" (não "atencao"), "endereço" (não "endereco"), "serviço" (não "servico"), "informação" (não "informacao"), "horário" (não "horario"), "obrigado/obrigada" (não "obrigad@"), "também" (não "tambem").
+- Pontuação e maiúsculas conforme a língua portuguesa.
+- Se receber mensagem do usuário sem acentos, AINDA assim responda com acentos corretos.`
+
     const responseSchema = getResponseSchema(handoffEnabled)
 
     console.log(`[chat-agent] Handoff enabled: ${handoffEnabled}`)
