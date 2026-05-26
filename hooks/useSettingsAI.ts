@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { AIProvider } from '@/lib/ai/providers'
 import { useDevMode } from '@/components/providers/DevModeProvider'
 import { DEFAULT_MODEL_ID } from '@/lib/ai/model'
@@ -54,8 +55,18 @@ const DEFAULT_OCR_CONFIG: OCRConfig = {
 // CONTROLLER HOOK
 // =============================================================================
 
+// Defaults sensatos por provider — usados ao trocar provider no select.
+// Sem isso, trocar para OpenAI deixa o model como 'gemini-1.5-flash' (DEFAULT_MODEL_ID
+// é fixo em Google), gerando combo inválido {provider: 'openai', model: 'gemini-*'}
+// que persistia no DB e quebrava todas as chamadas de IA.
+const DEFAULT_MODEL_BY_PROVIDER: Record<AiProviderType, string> = {
+  google: 'gemini-flash-latest',
+  openai: 'gpt-4o-mini',
+}
+
 export const useSettingsAIController = () => {
   const { isDevMode } = useDevMode()
+  const queryClient = useQueryClient()
 
   const [provider, setProvider] = useState<AiProviderType>('google')
   const [model, setModel] = useState(DEFAULT_MODEL_ID)
@@ -164,6 +175,7 @@ export const useSettingsAIController = () => {
       setGoogleKeyDraft('')
       toast.success('Chave Google salva')
       await loadConfig()
+      await queryClient.invalidateQueries({ queryKey: ['allSettings'] })
       // Recarrega modelos com a nova chave
       void fetchModels('google')
     } catch (error) {
@@ -185,6 +197,7 @@ export const useSettingsAIController = () => {
       setOpenaiKeyDraft('')
       toast.success('Chave OpenAI salva')
       await loadConfig()
+      await queryClient.invalidateQueries({ queryKey: ['allSettings'] })
       void fetchModels('openai')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao salvar chave OpenAI'
@@ -199,6 +212,7 @@ export const useSettingsAIController = () => {
       toast.success(`Chave ${targetProvider === 'google' ? 'Google' : 'OpenAI'} removida`)
       setModels([])
       await loadConfig()
+      await queryClient.invalidateQueries({ queryKey: ['allSettings'] })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao remover chave'
       toast.error(message)
@@ -211,7 +225,9 @@ export const useSettingsAIController = () => {
 
   const handleProviderSelect = (nextProvider: AiProviderType) => {
     setProvider(nextProvider)
-    setModel(DEFAULT_MODEL_ID)
+    // Usa default por provider em vez de DEFAULT_MODEL_ID (que é fixo em Google).
+    // Garante que clicar em "OpenAI" seleciona um model OpenAI, não Gemini.
+    setModel(DEFAULT_MODEL_BY_PROVIDER[nextProvider] || DEFAULT_MODEL_ID)
     setModels([])
   }
 
@@ -226,6 +242,10 @@ export const useSettingsAIController = () => {
       await settingsService.saveAIConfig({ provider, model, routes, prompts })
       toast.success('Configurações salvas')
       await loadConfig()
+      // Invalida o cache do React Query de allSettings — outras telas
+      // (settings principal, sidebar) refletem a mudança imediatamente.
+      // Sem isso, navegar pra outra tela mostra config antiga por até 30s.
+      await queryClient.invalidateQueries({ queryKey: ['allSettings'] })
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Erro ao salvar configurações'
