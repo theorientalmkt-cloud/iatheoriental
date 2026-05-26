@@ -11,13 +11,14 @@
  * Isso elimina a dependência de aprovação do Flow na Meta.
  */
 
-import { settingsDb } from '@/lib/supabase-db'
+import { settingsDb, contactDb } from '@/lib/supabase-db'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import {
   getCalendarConfig,
   listBusyTimes,
   createEvent,
 } from '@/lib/google-calendar'
+import { ContactStatus } from '@/types'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { addMinutes, addDays } from 'date-fns'
 
@@ -510,6 +511,35 @@ export async function confirmBooking(params: {
     const formattedEndTime = formatInTimeZone(slotEnd, timeZone, 'HH:mm')
 
     console.log(`[calendar-text-booking] ✅ Event created: ${event.id} for ${params.customerPhone}`)
+
+    // Salva/atualiza contato no V-Smart com tag 'agendamento-ia'.
+    // Usa upsertMergeTagsByPhone: se contato já existe, faz MERGE (não sobrescreve
+    // nome ou tags que o operador já tenha definido manualmente).
+    // Fire-and-forget: erro aqui não derruba o booking (evento já foi criado).
+    try {
+      await contactDb.upsertMergeTagsByPhone(
+        {
+          name: params.customerName,
+          phone: params.customerPhone,
+          email: null,
+          status: ContactStatus.OPT_IN,
+          tags: ['agendamento-ia'],
+          custom_fields: {
+            ultimo_agendamento: `${serviceName} em ${formattedDate} às ${formattedTime}`,
+            ultimo_agendamento_em: new Date().toISOString(),
+            ...(params.notes ? { observacoes_agendamento: params.notes } : {}),
+          },
+        },
+        ['agendamento-ia']
+      )
+      console.log(`[calendar-text-booking] 👤 Contato salvo/atualizado: ${params.customerPhone}`)
+    } catch (contactError) {
+      // Não bloqueia retorno do booking — log apenas
+      console.warn(
+        `[calendar-text-booking] ⚠️ Falha ao salvar contato (booking foi criado normalmente):`,
+        contactError instanceof Error ? contactError.message : contactError
+      )
+    }
 
     return {
       success: true,
