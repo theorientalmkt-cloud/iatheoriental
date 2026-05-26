@@ -486,15 +486,23 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       description: 'Envia uma resposta estruturada ao usuário. Use APENAS quando tiver a resposta final. NÃO use para respostas parciais.',
       inputSchema: responseSchema,
       execute: async (params) => {
-        const handoffParams = params as { shouldHandoff?: boolean }
+        // Cast permissivo: o schema é dinâmico (handoff fields presentes ou não),
+        // mas SupportResponse (tipo do response) sempre inclui esses campos.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = params as any
         // Converte Markdown → WhatsApp (zero tokens extras, só post-processing)
         const formattedMessage = convertMarkdownToWhatsApp(params.message)
         response = {
-          ...params,
           message: formattedMessage,
-          shouldHandoff: handoffParams.shouldHandoff ?? false,
-          sources: sources || params.sources,
-          shouldQuoteUserMessage, // Inclui a flag setada pelo tool quoteMessage
+          sentiment: params.sentiment,
+          confidence: params.confidence,
+          sources: sources ?? p.sources ?? null,
+          shouldQuoteUserMessage, // Flag setada pelo tool quoteMessage (boolean)
+          shouldHandoff: p.shouldHandoff ?? false,
+          // Quando handoff não está habilitado, esses campos não existem em params.
+          // Preenchemos com null para satisfazer o tipo SupportResponse.
+          handoffReason: p.handoffReason ?? null,
+          handoffSummary: p.handoffSummary ?? null,
         }
         hasResponded = true // Marca que já respondeu
         return { success: true, message: formattedMessage }
