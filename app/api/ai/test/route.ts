@@ -223,9 +223,11 @@ export async function POST(req: NextRequest) {
         sentiment: result.response.sentiment,
         confidence: result.response.confidence,
         shouldHandoff: result.response.shouldHandoff || false,
-        handoffReason: result.response.handoffReason,
-        handoffSummary: result.response.handoffSummary,
-        sources: result.response.sources,
+        // Schema do chat-agent usa .nullable() — converte null para undefined
+        // para manter compatibilidade com o tipo AITestResponse (string | undefined).
+        handoffReason: result.response.handoffReason ?? undefined,
+        handoffSummary: result.response.handoffSummary ?? undefined,
+        sources: result.response.sources ?? undefined,
       }
     } else {
       response.error = result.error
