@@ -186,11 +186,33 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Se chat-agent retornou !success mas com fallback amigável (ex: "Tive problema técnico,
-    // pode repetir?"), envia essa mensagem normalmente. NÃO faz handoff automático -
-    // erros transitórios pedem retry do usuário, não escalonamento.
+    // Se chat-agent retornou !success mas com fallback amigável, NORMALMENTE envia a mensagem
+    // e deixa o cliente tentar de novo. PORÉM, se a mesma conversa já falhou recentemente
+    // (2+ vezes em 5min), assumimos erro persistente e escalamos para humano para não deixar
+    // o cliente preso conversando com bot quebrado.
     if (!result.success) {
-      console.log(`⚠️ [AI-RESPOND] AI returned fallback message (no handoff): ${result.error}`)
+      console.log(`⚠️ [AI-RESPOND] AI returned fallback message: ${result.error}`)
+
+      const failureCount = await trackConversationFailure(conversationId)
+      console.log(`⚠️ [AI-RESPOND] Consecutive failures for ${conversationId}: ${failureCount}`)
+
+      if (failureCount >= 3) {
+        console.log(`🚨 [AI-RESPOND] Persistent failure detected (${failureCount}x), escalating to human`)
+        await handleAutoHandoff(
+          conversationId,
+          conversation.phone,
+          `Falha persistente da IA (${failureCount} tentativas). Último erro: ${result.error}`
+        )
+        return NextResponse.json({
+          success: false,
+          error: result.error,
+          handedOff: true,
+          reason: 'persistent-failure',
+        })
+      }
+    } else {
+      // Sucesso: limpa contador de falhas dessa conversa
+      await clearConversationFailures(conversationId)
     }
 
     // 9. Envia resposta via WhatsApp (com split por parágrafos)
@@ -425,6 +447,43 @@ async function handleAutoHandoff(
     message_type: 'internal_note',
     delivery_status: 'delivered',
   })
+}
+
+// =============================================================================
+// Detecção de Falhas Persistentes
+// =============================================================================
+
+const FAILURE_KEY_PREFIX = 'ai:failures:'
+const FAILURE_WINDOW_SEC = 5 * 60 // 5 minutos - janela de contagem
+
+/**
+ * Incrementa contador de falhas consecutivas para uma conversa.
+ * Retorna a contagem atual. Se Redis indisponível, retorna 0 (degradação graceful).
+ */
+async function trackConversationFailure(conversationId: string): Promise<number> {
+  if (!redis) return 0
+  try {
+    const key = `${FAILURE_KEY_PREFIX}${conversationId}`
+    const count = await redis.incr(key)
+    // Reseta TTL a cada falha — janela rolante de 5min
+    await redis.expire(key, FAILURE_WINDOW_SEC)
+    return count
+  } catch (err) {
+    console.warn(`[AI-RESPOND] Failed to track failure in Redis:`, err)
+    return 0
+  }
+}
+
+/**
+ * Limpa contador de falhas após sucesso. Idempotente.
+ */
+async function clearConversationFailures(conversationId: string): Promise<void> {
+  if (!redis) return
+  try {
+    await redis.del(`${FAILURE_KEY_PREFIX}${conversationId}`)
+  } catch (err) {
+    console.warn(`[AI-RESPOND] Failed to clear failures in Redis:`, err)
+  }
 }
 
 /**
