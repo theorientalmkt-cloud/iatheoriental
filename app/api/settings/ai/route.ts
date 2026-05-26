@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { settingsDb } from '@/lib/supabase-db'
 import { clearSettingsCache } from '@/lib/ai'
 import { DEFAULT_AI_DIRECT, DEFAULT_AI_PROMPTS, DEFAULT_AI_ROUTES } from '@/lib/ai/ai-center-defaults'
 import { DEFAULT_OCR_MODEL } from '@/lib/ai/ocr/providers/gemini'
@@ -228,11 +229,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (updates.length > 0) {
-      const { error } = await supabase.admin
-        ?.from('settings')
-        .upsert(updates) || { error: new Error('Supabase not configured') }
-
-      if (error) {
+      // IMPORTANTE: usar settingsDb.set() em vez de supabase.upsert direto.
+      // settingsDb.set() invalida automaticamente o cache Redis (TTL 60s) de cada
+      // chave alterada. Sem isso, workers/inbox continuam usando provider/model
+      // antigo até o cache expirar, gerando o sintoma "salvei mas não funcionou".
+      try {
+        await Promise.all(updates.map((u) => settingsDb.set(u.key, u.value)))
+      } catch (error) {
         console.error('Supabase error:', error)
         throw new Error('Failed to save to database')
       }
@@ -270,12 +273,12 @@ export async function DELETE(request: NextRequest) {
 
     const keyName = provider === 'google' ? 'google_api_key' : 'openai_api_key'
 
-    const { error } = await supabase.admin
-      ?.from('settings')
-      .delete()
-      .eq('key', keyName) || { error: new Error('Supabase not configured') }
-
-    if (error) {
+    // Usa settingsDb.delete() em vez de supabase.delete() direto pra invalidar
+    // automaticamente o cache Redis. Sem isso a chave deletada continua valendo
+    // até 60s nos workers que usam settingsDb.get().
+    try {
+      await settingsDb.delete(keyName)
+    } catch (error) {
       console.error('Supabase error:', error)
       throw new Error('Failed to delete from database')
     }
