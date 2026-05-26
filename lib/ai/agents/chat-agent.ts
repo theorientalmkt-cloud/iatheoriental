@@ -134,6 +134,9 @@ export interface SupportAgentResult {
 // =============================================================================
 
 // Schema base (sem handoff)
+// IMPORTANTE: usamos .nullable() em vez de .optional() em campos que o LLM pode
+// pular. Gemini Flash rejeita function calls como "malformed" quando tenta
+// preencher campos optional com valores vazios — nullable é explícito.
 const baseResponseSchema = z.object({
   message: z.string().describe('A resposta para enviar ao usuário'),
   sentiment: z
@@ -144,6 +147,8 @@ const baseResponseSchema = z.object({
     .min(0)
     .max(1)
     .describe('Nível de confiança na resposta (0 = incerto, 1 = certo)'),
+  // sources é preenchido server-side pelo searchKnowledgeBase, mas mantido
+  // no schema por compatibilidade. LLM pode mandar null.
   sources: z
     .array(
       z.object({
@@ -151,29 +156,34 @@ const baseResponseSchema = z.object({
         content: z.string(),
       })
     )
-    .optional()
-    .describe('Fontes utilizadas para gerar a resposta'),
+    .nullable()
+    .describe('Fontes utilizadas para gerar a resposta. Use null se não houver.'),
   shouldQuoteUserMessage: z
     .boolean()
-    .optional()
-    .describe('Se a resposta deve citar a mensagem do usuário (aparecer como reply)'),
+    .nullable()
+    .describe('Se a resposta deve citar a mensagem do usuário (reply). Use null ou false se não.'),
 })
 
 // Campos de handoff (adicionados quando habilitado)
 // NOTA: A lógica de QUANDO fazer handoff deve estar no system_prompt do agente,
 // não aqui. Este schema apenas define a estrutura da resposta.
+//
+// IMPORTANTE: usamos .nullable() em vez de .optional() porque o Gemini Flash
+// rejeita function calls "malformed" quando tenta preencher campos optional
+// com strings vazias. Nullable é mais explícito — Gemini entende que pode mandar null
+// e não tenta gerar string vazia que quebra o parser.
 const handoffFields = {
   shouldHandoff: z
     .boolean()
-    .describe('Se deve transferir para um atendente humano'),
+    .describe('Se deve transferir para um atendente humano (true) ou continuar atendendo (false)'),
   handoffReason: z
     .string()
-    .optional()
-    .describe('Motivo da transferência para humano'),
+    .nullable()
+    .describe('Motivo da transferência para humano. Use null se shouldHandoff=false'),
   handoffSummary: z
     .string()
-    .optional()
-    .describe('Resumo da conversa para o atendente'),
+    .nullable()
+    .describe('Resumo da conversa para o atendente. Use null se shouldHandoff=false'),
 }
 
 // Schema completo (com handoff) - mantido para compatibilidade
@@ -913,8 +923,11 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
           message: convertMarkdownToWhatsApp(lastLLMText),
           sentiment: 'neutral',
           confidence: 0.3, // Baixa confiança pois não seguiu o formato
+          sources: sources ?? null,
+          shouldQuoteUserMessage: null,
           shouldHandoff: false,
-          sources: sources,
+          handoffReason: null,
+          handoffSummary: null,
         }
       } else {
         console.error(`[chat-agent] ⚠️ No response object after ${retryCount} attempts - respond tool was not called`)
@@ -991,7 +1004,11 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
     message: 'Tive um problema técnico momentâneo. Pode repetir sua última mensagem, por favor?',
     sentiment: 'neutral',
     confidence: 0,
+    sources: null,
+    shouldQuoteUserMessage: null,
     shouldHandoff: false,
+    handoffReason: null,
+    handoffSummary: null,
   }
 
   const logId = await persistAILog({
