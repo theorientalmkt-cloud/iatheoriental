@@ -123,7 +123,7 @@ async function getCalendarBookingConfig(): Promise<CalendarBookingConfig> {
   const raw = await settingsDb.get('calendar_booking_config')
   if (!raw) return DEFAULT_CONFIG
   try {
-    const parsed = JSON.parse(raw)
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
     return { ...DEFAULT_CONFIG, ...parsed }
   } catch {
     return DEFAULT_CONFIG
@@ -140,7 +140,7 @@ async function getBookingServices(): Promise<Array<{ id: string; title: string; 
   const raw = await settingsDb.get('booking_services')
   if (!raw) return DEFAULT_SERVICES
   try {
-    const parsed = JSON.parse(raw)
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (!Array.isArray(parsed)) return DEFAULT_SERVICES
     const normalized = parsed
       .map((opt: Record<string, unknown>) => ({
@@ -208,10 +208,12 @@ export async function checkTextBookingPrerequisites(): Promise<TextBookingPrereq
 
   try {
     // Check Google Calendar tokens
+    // settingsDb.get() pode retornar string (column text) OU objeto (column jsonb).
+    // Defendemos contra ambos os casos.
     const tokensRaw = await settingsDb.get('google_calendar_tokens')
     if (tokensRaw) {
-      const tokens = JSON.parse(tokensRaw)
-      details.hasGoogleCalendar = Boolean(tokens.accessToken || tokens.refreshToken)
+      const tokens = typeof tokensRaw === 'string' ? JSON.parse(tokensRaw) : tokensRaw
+      details.hasGoogleCalendar = Boolean(tokens?.accessToken || tokens?.refreshToken)
     }
     if (!details.hasGoogleCalendar) {
       missing.push('Google Calendar não conectado')
