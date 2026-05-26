@@ -97,10 +97,11 @@ export async function checkBookingPrerequisites(): Promise<BookingPrerequisites>
 
   try {
     // 1. Check Google Calendar tokens
+    // settingsDb.get() pode retornar string OU objeto (jsonb deserializado pelo Supabase).
     const tokensRaw = await settingsDb.get(SETTINGS_KEYS.calendarTokens)
     if (tokensRaw) {
-      const tokens = JSON.parse(tokensRaw)
-      details.hasGoogleCalendar = Boolean(tokens.accessToken || tokens.refreshToken)
+      const tokens = typeof tokensRaw === 'string' ? JSON.parse(tokensRaw) : tokensRaw
+      details.hasGoogleCalendar = Boolean(tokens?.accessToken || tokens?.refreshToken)
     }
     if (!details.hasGoogleCalendar) {
       missing.push('Google Calendar não conectado')
