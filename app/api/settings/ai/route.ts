@@ -55,8 +55,14 @@ async function validateOpenAIKey(apiKey: string): Promise<ValidationResult> {
   }
 }
 
-function parseJsonSetting<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback
+function parseJsonSetting<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined || value === '') return fallback
+  // Se Supabase já desserializou (coluna jsonb), retorna direto sem JSON.parse.
+  // Sem isso, JSON.parse(objeto) lança SyntaxError → catch → retorna fallback
+  // → UI mostra DEFAULT_AI_DIRECT (gemini-flash-latest) toda vez que recarrega,
+  // ignorando o model que o usuário acabou de salvar.
+  if (typeof value === 'object') return value as T
+  if (typeof value !== 'string') return fallback
   try {
     return JSON.parse(value) as T
   } catch {
