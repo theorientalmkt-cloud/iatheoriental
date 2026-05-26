@@ -300,7 +300,8 @@ export async function getStoredTokens(): Promise<GoogleCalendarTokens | null> {
   const raw = await settingsDb.get(SETTINGS_KEYS.tokens)
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw)
+    // settingsDb.get() pode retornar string OU objeto (jsonb deserializado pelo Supabase).
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (!parsed?.accessToken) return null
     return parsed as GoogleCalendarTokens
   } catch {
@@ -325,7 +326,8 @@ export async function getCalendarConfig(): Promise<GoogleCalendarConfig | null> 
   const raw = await settingsDb.get(SETTINGS_KEYS.config)
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw)
+    // settingsDb.get() pode retornar string OU objeto (jsonb deserializado pelo Supabase).
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (!parsed?.calendarId) return null
     return parsed as GoogleCalendarConfig
   } catch {
@@ -350,7 +352,8 @@ export async function getCalendarChannel(): Promise<GoogleCalendarChannel | null
   const raw = await settingsDb.get(SETTINGS_KEYS.channel)
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw)
+    // settingsDb.get() pode retornar string OU objeto (jsonb deserializado pelo Supabase).
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (!parsed?.id || !parsed?.resourceId) return null
     return parsed as GoogleCalendarChannel
   } catch {
