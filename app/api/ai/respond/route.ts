@@ -173,18 +173,24 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ [AI-RESPOND] AI result: success=${result.success}, latency=${result.latencyMs}ms`)
 
-    // 8. Trata erro da IA
-    if (!result.success || !result.response?.message) {
-      console.log(`❌ [AI-RESPOND] AI failed: ${result.error}`)
-
-      // Auto-handoff em caso de erro
+    // 8. Trata caso sem mensagem nenhuma (raro - só quando chat-agent falha catastroficamente
+    // sem nem conseguir gerar o fallback amigável). Nesse caso, mantém auto-handoff como
+    // último recurso para o cliente não ficar sem resposta.
+    if (!result.response?.message) {
+      console.log(`❌ [AI-RESPOND] AI failed without any fallback message: ${result.error}`)
       await handleAutoHandoff(conversationId, conversation.phone, result.error || 'AI processing failed')
-
       return NextResponse.json({
         success: false,
         error: result.error || 'Empty response',
         handedOff: true,
       })
+    }
+
+    // Se chat-agent retornou !success mas com fallback amigável (ex: "Tive problema técnico,
+    // pode repetir?"), envia essa mensagem normalmente. NÃO faz handoff automático -
+    // erros transitórios pedem retry do usuário, não escalonamento.
+    if (!result.success) {
+      console.log(`⚠️ [AI-RESPOND] AI returned fallback message (no handoff): ${result.error}`)
     }
 
     // 9. Envia resposta via WhatsApp (com split por parágrafos)
@@ -385,8 +391,10 @@ async function handleAutoHandoff(
   // Cancela qualquer debounce pendente para evitar resposta extra após o handoff
   cancelDebounce(conversationId)
 
+  // Mensagem usada apenas em caso catastrófico (chat-agent não conseguiu nem gerar fallback,
+  // ex: API key não configurada). Casos normais de erro/timeout passam pelo fallback amigável.
   const fallbackMessage =
-    'Desculpe, estou com dificuldades técnicas. Vou transferir você para um atendente.'
+    'Um momento, estou verificando aqui. Em instantes te respondo.'
 
   // Envia mensagem de fallback
   const sendResult = await sendWhatsAppMessage({
