@@ -784,6 +784,23 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
         }, AI_TIMEOUT_MS)
 
         try {
+          // Safety settings relaxadas para Google Gemini. Sem isso, o Gemini bloqueia
+          // silenciosamente conversas com termos sensíveis (alergias, restrições,
+          // contexto médico/saúde, etc.) retornando finishReason=error sem warning.
+          // BLOCK_ONLY_HIGH = só bloqueia conteúdo claramente perigoso, não falso-positivo.
+          const providerOptions = resolvedProvider === 'google'
+            ? {
+                google: {
+                  safetySettings: [
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+                  ],
+                },
+              }
+            : undefined
+
           const result = await generateText({
             model,
             system: currentSystemPrompt,
@@ -795,6 +812,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             temperature: agent.temperature ?? DEFAULT_TEMPERATURE,
             maxOutputTokens: agent.max_tokens ?? DEFAULT_MAX_TOKENS,
             abortSignal: abortController.signal,
+            ...(providerOptions ? { providerOptions } : {}),
           })
 
           // Detecta erro sinalizado pelo provider no próprio resultado
@@ -805,6 +823,10 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             console.error(`[chat-agent] - response headers: ${JSON.stringify(result.response?.headers || {})}`)
             console.error(`[chat-agent] - warnings: ${JSON.stringify(result.warnings || [])}`)
             console.error(`[chat-agent] - usage: ${JSON.stringify(result.usage || {})}`)
+            // Logar providerMetadata revela safety blocks do Gemini (promptFeedback, candidates[].finishReason etc.)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const providerMetadata = (result as any).providerMetadata || (result.response as any)?.body || {}
+            console.error(`[chat-agent] - providerMetadata: ${JSON.stringify(providerMetadata, null, 2).slice(0, 2000)}`)
             result.steps?.forEach((step, i) => {
               console.error(`[chat-agent] - Step ${i + 1} details:`, JSON.stringify({
                 finishReason: step.finishReason,
@@ -910,13 +932,20 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
   } catch (err) {
     error = err instanceof Error ? err.message : 'Unknown error'
     console.error('[chat-agent] ❌ Error:', error)
-    console.error('[chat-agent] ❌ Full error object:', err)
+    console.error('[chat-agent] ❌ Stack:', err instanceof Error ? err.stack : 'no-stack')
+    console.error('[chat-agent] ❌ Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err instanceof Error ? err : {}), 2))
     console.error('[chat-agent] ❌ Context:', {
       modelId,
       agentId: agent.id,
       agentName: agent.name,
       hasKnowledgeBase,
       messageCount: messages.length,
+      conversationId: conversation.id,
+      conversationPhone: conversation.phone,
+      lastInputText: inputText.slice(0, 300),
+      // Lista das tools que estavam disponíveis nesse turno (ajuda a diagnosticar
+      // "LLM tentou chamar uma tool que não tinha schema válido")
+      // (definido fora do try, este é o snapshot final)
     })
   }
 
