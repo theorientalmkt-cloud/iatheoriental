@@ -270,6 +270,12 @@ export async function checkAvailability(params?: {
   const now = new Date()
   const minAdvanceMs = (config.minAdvanceHours || 2) * 60 * 60 * 1000
   const earliest = new Date(now.getTime() + minAdvanceMs)
+  const slotMs = config.slotDurationMinutes * 60 * 1000
+
+  // Arredonda PRA CIMA até o próximo múltiplo de slotDurationMinutes.
+  // Sem isso, slots herdam o offset de minutos da hora atual (ex: 19:12 em vez de 19:00).
+  const roundUpToSlot = (d: Date): Date =>
+    new Date(Math.ceil(d.getTime() / slotMs) * slotMs)
 
   let start: Date
   let end: Date
@@ -278,11 +284,11 @@ export async function checkAvailability(params?: {
     // Client asked for a specific date
     start = fromZonedTime(`${params.preferredDate}T00:00:00`, timeZone)
     if (start.getTime() < earliest.getTime()) {
-      start = earliest
+      start = roundUpToSlot(earliest)
     }
     end = addDays(start, 1)
   } else {
-    start = earliest
+    start = roundUpToSlot(earliest)
     const daysAhead = Math.min(params?.daysAhead || 7, config.maxAdvanceDays || 14)
     end = addDays(now, daysAhead)
   }
@@ -302,7 +308,6 @@ export async function checkAvailability(params?: {
     }))
 
     const slots: AvailableSlot[] = []
-    const slotMs = config.slotDurationMinutes * 60 * 1000
     let cursor = start
 
     while (cursor.getTime() + slotMs <= end.getTime() && slots.length < MAX_SLOTS_TO_SHOW) {
