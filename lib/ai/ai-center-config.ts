@@ -27,8 +27,13 @@ let cachedRoutes: AiRoutesConfig | null = null
 let cachedDirect: AiDirectConfig | null = null
 let cachedPrompts: AiPromptsConfig | null = null
 
-function parseJsonSetting<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback
+function parseJsonSetting<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined || value === '') return fallback
+  // Se Supabase desserializou (coluna jsonb), retorna direto sem JSON.parse.
+  // Sem isso, JSON.parse(objeto) lança SyntaxError → catch → retorna DEFAULT
+  // → IA usa modelo/prompt padrão ignorando o que o operador salvou.
+  if (typeof value === 'object') return value as T
+  if (typeof value !== 'string') return fallback
   try {
     return JSON.parse(value) as T
   } catch {
