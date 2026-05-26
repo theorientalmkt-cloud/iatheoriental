@@ -1773,6 +1773,30 @@ export const customFieldDefDb = {
 const SETTINGS_CACHE_PREFIX = 'settings:'
 const SETTINGS_CACHE_TTL = 60 // segundos
 
+/**
+ * Normaliza qualquer valor retornado pelo Supabase para string.
+ *
+ * Por que: a coluna `settings.value` é `text NOT NULL`, mas algumas migrations
+ * históricas ou casts implícitos podem fazer o Supabase entregar um objeto
+ * já desserializado (especialmente se o valor armazenado for JSON e o driver
+ * decidir desserializar). Sem normalização, consumers que fazem `JSON.parse(raw)`
+ * recebem `SyntaxError: "[object Object]" is not valid JSON` e caem em catch
+ * silencioso, mascarando bugs em toda a aplicação.
+ *
+ * Garantia: o que sai daqui é SEMPRE string ou null. Consumers podem usar
+ * `JSON.parse()` sem typeof check, ou ainda mais seguro usar `settingsDb.getJson<T>()`.
+ */
+function normalizeSettingsValue(value: unknown): string | null {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'string') return value
+    // Objeto ou array que veio desserializado: re-stringify para manter contrato
+    try {
+        return JSON.stringify(value)
+    } catch {
+        return null
+    }
+}
+
 export const settingsDb = {
     get: async (key: string): Promise<string | null> => {
         const cacheKey = `${SETTINGS_CACHE_PREFIX}${key}`
@@ -1780,9 +1804,9 @@ export const settingsDb = {
         // 1. Tenta buscar do cache Redis
         if (redis) {
             try {
-                const cached = await redis.get<string>(cacheKey)
-                if (cached !== null) {
-                    return cached
+                const cached = await redis.get<unknown>(cacheKey)
+                if (cached !== null && cached !== undefined) {
+                    return normalizeSettingsValue(cached)
                 }
             } catch (e) {
                 // Redis error - fallback silencioso para DB
@@ -1799,17 +1823,34 @@ export const settingsDb = {
 
         if (error || !data) return null
 
-        // 3. Armazena no cache para próximas requisições
-        if (redis && data.value) {
+        const normalized = normalizeSettingsValue(data.value)
+
+        // 3. Armazena no cache (string normalizada) para próximas requisições
+        if (redis && normalized !== null) {
             try {
-                await redis.set(cacheKey, data.value, { ex: SETTINGS_CACHE_TTL })
+                await redis.set(cacheKey, normalized, { ex: SETTINGS_CACHE_TTL })
             } catch (e) {
                 // Ignore cache write errors
                 console.warn('[settingsDb] Redis write error:', e)
             }
         }
 
-        return data.value
+        return normalized
+    },
+
+    /**
+     * Helper opcional: lê e já desserializa JSON com type-safety.
+     * Use quando souber que o valor é um objeto JSON.
+     * Retorna null se a chave não existir ou se o JSON for inválido.
+     */
+    getJson: async <T = unknown>(key: string): Promise<T | null> => {
+        const raw = await settingsDb.get(key)
+        if (!raw) return null
+        try {
+            return JSON.parse(raw) as T
+        } catch {
+            return null
+        }
     },
 
     set: async (key: string, value: string): Promise<void> => {
@@ -1832,6 +1873,28 @@ export const settingsDb = {
                 await redis.del(cacheKey)
             } catch (e) {
                 // Ignore cache invalidation errors
+                console.warn('[settingsDb] Redis del error:', e)
+            }
+        }
+    },
+
+    /**
+     * Remove uma chave de settings E invalida o cache Redis.
+     * Use isto em vez de supabase.delete() direto pra garantir consistência.
+     */
+    delete: async (key: string): Promise<void> => {
+        const { error } = await supabase
+            .from('settings')
+            .delete()
+            .eq('key', key)
+
+        if (error) throw error
+
+        if (redis) {
+            try {
+                const cacheKey = `${SETTINGS_CACHE_PREFIX}${key}`
+                await redis.del(cacheKey)
+            } catch (e) {
                 console.warn('[settingsDb] Redis del error:', e)
             }
         }
