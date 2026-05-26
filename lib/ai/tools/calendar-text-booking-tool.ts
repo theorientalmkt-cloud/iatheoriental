@@ -1,48 +1,80 @@
 /**
- * Booking Tool for AI Agents
+ * Calendar Text Booking Tool for AI Agents
  *
- * Provides a tool that sends a WhatsApp Flow for calendar booking.
- * The Flow handles the entire booking experience visually, avoiding
- * AI hallucination about availability.
+ * Alternativa ao booking-tool.ts que NÃO depende de WhatsApp Flows (mini app Meta).
+ * A IA consulta disponibilidade e agenda diretamente via conversa de texto.
+ *
+ * Duas tools:
+ * 1. checkAvailability - Consulta slots livres no Google Calendar
+ * 2. confirmBooking - Cria o evento no Google Calendar
+ *
+ * Isso elimina a dependência de aprovação do Flow na Meta.
  */
 
 import { settingsDb } from '@/lib/supabase-db'
-import { isSupabaseConfigured, supabase } from '@/lib/supabase'
-import { sendFlowMessage } from '@/lib/whatsapp-send'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import {
+  getCalendarConfig,
+  listBusyTimes,
+  createEvent,
+} from '@/lib/google-calendar'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { addMinutes, addDays } from 'date-fns'
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-export interface BookingPrerequisites {
+type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+
+type WorkingHoursDay = {
+  day: Weekday
+  enabled: boolean
+  start: string
+  end: string
+}
+
+type CalendarBookingConfig = {
+  timezone: string
+  slotDurationMinutes: number
+  slotBufferMinutes: number
+  workingHours: WorkingHoursDay[]
+  minAdvanceHours?: number
+  maxAdvanceDays?: number
+  allowSimultaneous?: boolean
+}
+
+export type TextBookingPrerequisites = {
   ready: boolean
   missing: string[]
   details: {
     hasGoogleCalendar: boolean
-    hasPublishedFlow: boolean
-    hasBookingFlowId: boolean
     hasCalendarConfig: boolean
-    bookingFlowId: string | null
-    metaFlowId: string | null
+    calendarId: string | null
+    timezone: string
   }
 }
 
-export interface BookingConfig {
-  /** Internal flow ID (from flows table) */
-  flowId: string
-  /** Meta Flow ID (for sending) */
-  metaFlowId: string
-  /** Body text for the flow message */
-  bodyText: string
-  /** CTA button text */
-  ctaText: string
-  /** Header text */
-  headerText?: string
+export type AvailableSlot = {
+  start: string
+  end: string
+  label: string
 }
 
-export interface SendBookingFlowResult {
+export type AvailabilityResult = {
+  available: boolean
+  slots: AvailableSlot[]
+  dateRange: string
+  timezone: string
+  slotDurationMinutes: number
+  message: string
+}
+
+export type BookingResult = {
   success: boolean
-  messageId?: string
+  eventId?: string
+  eventLink?: string
+  summary?: string
   error?: string
 }
 
@@ -50,55 +82,135 @@ export interface SendBookingFlowResult {
 // CONSTANTS
 // =============================================================================
 
-const SETTINGS_KEYS = {
-  bookingFlowId: 'booking_flow_id',
-  calendarTokens: 'google_calendar_tokens',
-  calendarConfig: 'google_calendar_config',
-  bookingConfig: 'calendar_booking_config',
-} as const
+const WEEKDAY_KEYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
-const DEFAULT_BOOKING_TEXT = {
-  body: 'Clique no botão abaixo para ver os horários disponíveis e agendar seu atendimento.',
-  cta: 'Ver Horários',
-  header: 'Agendamento',
+const WEEKDAY_LABELS: Record<Weekday, string> = {
+  mon: 'Segunda',
+  tue: 'Terça',
+  wed: 'Quarta',
+  thu: 'Quinta',
+  fri: 'Sexta',
+  sat: 'Sábado',
+  sun: 'Domingo',
+}
+
+const DEFAULT_CONFIG: CalendarBookingConfig = {
+  timezone: 'America/Sao_Paulo',
+  slotDurationMinutes: 30,
+  slotBufferMinutes: 10,
+  workingHours: [
+    { day: 'mon', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'tue', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'wed', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'thu', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'fri', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'sat', enabled: false, start: '09:00', end: '13:00' },
+    { day: 'sun', enabled: false, start: '09:00', end: '13:00' },
+  ],
+  minAdvanceHours: 2,
+  maxAdvanceDays: 14,
+  allowSimultaneous: false,
+}
+
+const MAX_SLOTS_TO_SHOW = 15
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+async function getCalendarBookingConfig(): Promise<CalendarBookingConfig> {
+  if (!isSupabaseConfigured()) return DEFAULT_CONFIG
+  const raw = await settingsDb.get('calendar_booking_config')
+  if (!raw) return DEFAULT_CONFIG
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return { ...DEFAULT_CONFIG, ...parsed }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+async function getBookingServices(): Promise<Array<{ id: string; title: string; durationMinutes?: number }>> {
+  const DEFAULT_SERVICES = [
+    { id: 'consulta', title: 'Consulta', durationMinutes: 30 },
+    { id: 'visita', title: 'Visita', durationMinutes: 60 },
+    { id: 'suporte', title: 'Suporte', durationMinutes: 30 },
+  ]
+  if (!isSupabaseConfigured()) return DEFAULT_SERVICES
+  const raw = await settingsDb.get('booking_services')
+  if (!raw) return DEFAULT_SERVICES
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return DEFAULT_SERVICES
+    const normalized = parsed
+      .map((opt: Record<string, unknown>) => ({
+        id: typeof opt?.id === 'string' ? opt.id.trim() : String(opt?.id ?? '').trim(),
+        title: typeof opt?.title === 'string' ? opt.title.trim() : String(opt?.title ?? '').trim(),
+        ...(typeof opt?.durationMinutes === 'number' ? { durationMinutes: opt.durationMinutes } : {}),
+      }))
+      .filter((opt: { id: string; title: string }) => opt.id && opt.title)
+    return normalized.length ? normalized : DEFAULT_SERVICES
+  } catch {
+    return DEFAULT_SERVICES
+  }
+}
+
+function parseTimeToMinutes(value: string): number {
+  const [hh, mm] = value.split(':').map(Number)
+  return (hh || 0) * 60 + (mm || 0)
+}
+
+function isSlotInsideWorkingHours(
+  start: Date,
+  end: Date,
+  timeZone: string,
+  workingHours: WorkingHoursDay[]
+): boolean {
+  const isoDay = Number(formatInTimeZone(start, timeZone, 'i'))
+  const dayKey = WEEKDAY_KEYS[isoDay - 1]
+  const workingDay = workingHours.find((d) => d.day === dayKey)
+  if (!workingDay || !workingDay.enabled) return false
+
+  const startHM =
+    Number(formatInTimeZone(start, timeZone, 'HH')) * 60 +
+    Number(formatInTimeZone(start, timeZone, 'mm'))
+  const endHM =
+    Number(formatInTimeZone(end, timeZone, 'HH')) * 60 +
+    Number(formatInTimeZone(end, timeZone, 'mm'))
+
+  const windowStart = parseTimeToMinutes(workingDay.start)
+  const windowEnd = parseTimeToMinutes(workingDay.end)
+
+  // Ensure start and end are on the same calendar day
+  const startDay = formatInTimeZone(start, timeZone, 'yyyy-MM-dd')
+  const endDay = formatInTimeZone(end, timeZone, 'yyyy-MM-dd')
+  if (startDay !== endDay) return false
+
+  return startHM >= windowStart && endHM <= windowEnd
 }
 
 // =============================================================================
 // PREREQUISITES CHECK
 // =============================================================================
 
-/**
- * Check if all prerequisites for the booking tool are met.
- *
- * Prerequisites:
- * 1. Google Calendar connected (tokens exist)
- * 2. A Flow is published to Meta (has meta_flow_id)
- * 3. booking_flow_id is set in settings
- * 4. Calendar booking config exists (optional, has defaults)
- */
-export async function checkBookingPrerequisites(): Promise<BookingPrerequisites> {
+export async function checkTextBookingPrerequisites(): Promise<TextBookingPrerequisites> {
   const missing: string[] = []
   const details = {
     hasGoogleCalendar: false,
-    hasPublishedFlow: false,
-    hasBookingFlowId: false,
     hasCalendarConfig: false,
-    bookingFlowId: null as string | null,
-    metaFlowId: null as string | null,
+    calendarId: null as string | null,
+    timezone: DEFAULT_CONFIG.timezone,
   }
 
   if (!isSupabaseConfigured()) {
-    return {
-      ready: false,
-      missing: ['Supabase não configurado'],
-      details,
-    }
+    return { ready: false, missing: ['Supabase não configurado'], details }
   }
 
   try {
-    // 1. Check Google Calendar tokens
-    // settingsDb.get() pode retornar string OU objeto (jsonb deserializado pelo Supabase).
-    const tokensRaw = await settingsDb.get(SETTINGS_KEYS.calendarTokens)
+    // Check Google Calendar tokens
+    // settingsDb.get() pode retornar string (column text) OU objeto (column jsonb).
+    // Defendemos contra ambos os casos.
+    const tokensRaw = await settingsDb.get('google_calendar_tokens')
     if (tokensRaw) {
       const tokens = typeof tokensRaw === 'string' ? JSON.parse(tokensRaw) : tokensRaw
       details.hasGoogleCalendar = Boolean(tokens?.accessToken || tokens?.refreshToken)
@@ -107,119 +219,330 @@ export async function checkBookingPrerequisites(): Promise<BookingPrerequisites>
       missing.push('Google Calendar não conectado')
     }
 
-    // 2. Check if booking_flow_id is configured
-    const bookingFlowId = await settingsDb.get(SETTINGS_KEYS.bookingFlowId)
-    if (bookingFlowId) {
-      details.bookingFlowId = bookingFlowId
-      details.hasBookingFlowId = true
-
-      // 3. Check if the flow is published (has meta_flow_id)
-      const { data: flow } = await supabase
-        .from('flows')
-        .select('meta_flow_id, meta_status')
-        .eq('id', bookingFlowId)
-        .single()
-
-      if (flow?.meta_flow_id) {
-        details.metaFlowId = flow.meta_flow_id
-        details.hasPublishedFlow = true
-      } else {
-        missing.push('Flow de agendamento não está publicado no Meta')
-      }
+    // Check calendar config
+    const calendarConfig = await getCalendarConfig()
+    if (calendarConfig?.calendarId) {
+      details.calendarId = calendarConfig.calendarId
+      details.hasCalendarConfig = true
+      details.timezone = calendarConfig.calendarTimeZone || DEFAULT_CONFIG.timezone
     } else {
-      missing.push('Nenhum Flow de agendamento configurado')
+      missing.push('Nenhum calendário selecionado')
     }
-
-    // 4. Check calendar booking config (optional)
-    const configRaw = await settingsDb.get(SETTINGS_KEYS.bookingConfig)
-    details.hasCalendarConfig = Boolean(configRaw)
-
   } catch (error) {
-    console.error('[checkBookingPrerequisites] Error:', error)
+    console.error('[calendar-text-booking] Error checking prerequisites:', error)
     missing.push('Erro ao verificar pré-requisitos')
   }
 
-  return {
-    ready: missing.length === 0,
-    missing,
-    details,
-  }
+  return { ready: missing.length === 0, missing, details }
 }
 
 // =============================================================================
-// GET BOOKING CONFIG
+// CHECK AVAILABILITY
 // =============================================================================
 
 /**
- * Get the booking configuration including the Meta Flow ID.
- * Returns null if prerequisites are not met.
- */
-export async function getBookingConfig(): Promise<BookingConfig | null> {
-  const prereqs = await checkBookingPrerequisites()
-
-  if (!prereqs.ready || !prereqs.details.metaFlowId || !prereqs.details.bookingFlowId) {
-    return null
-  }
-
-  return {
-    flowId: prereqs.details.bookingFlowId,
-    metaFlowId: prereqs.details.metaFlowId,
-    bodyText: DEFAULT_BOOKING_TEXT.body,
-    ctaText: DEFAULT_BOOKING_TEXT.cta,
-    headerText: DEFAULT_BOOKING_TEXT.header,
-  }
-}
-
-// =============================================================================
-// SEND BOOKING FLOW
-// =============================================================================
-
-/**
- * Send a booking flow message to a phone number.
+ * Consulta slots disponíveis no Google Calendar e retorna como texto
+ * para a IA apresentar ao cliente.
  *
- * @param phoneNumber - Recipient phone number
- * @returns Result with success status and message ID
+ * @param daysAhead - Quantos dias à frente consultar (default: 7)
+ * @param preferredDate - Data preferida pelo cliente (opcional, formato YYYY-MM-DD)
  */
-export async function sendBookingFlow(phoneNumber: string): Promise<SendBookingFlowResult> {
-  const config = await getBookingConfig()
+export async function checkAvailability(params?: {
+  daysAhead?: number
+  preferredDate?: string
+}): Promise<AvailabilityResult> {
+  const prereqs = await checkTextBookingPrerequisites()
 
-  if (!config) {
-    const prereqs = await checkBookingPrerequisites()
+  if (!prereqs.ready || !prereqs.details.calendarId) {
     return {
-      success: false,
-      error: `Agendamento não disponível: ${prereqs.missing.join(', ')}`,
+      available: false,
+      slots: [],
+      dateRange: '',
+      timezone: DEFAULT_CONFIG.timezone,
+      slotDurationMinutes: DEFAULT_CONFIG.slotDurationMinutes,
+      message: `Agendamento indisponível: ${prereqs.missing.join(', ')}`,
     }
   }
 
-  const result = await sendFlowMessage({
-    to: phoneNumber,
-    flowId: config.metaFlowId,
-    bodyText: config.bodyText,
-    ctaText: config.ctaText,
-    headerText: config.headerText,
-    flowAction: 'navigate',
-  })
+  const config = await getCalendarBookingConfig()
+  const timeZone = prereqs.details.timezone || config.timezone
 
-  return {
-    success: result.success,
-    messageId: result.messageId,
-    error: result.error,
+  const now = new Date()
+  const minAdvanceMs = (config.minAdvanceHours || 2) * 60 * 60 * 1000
+  const earliest = new Date(now.getTime() + minAdvanceMs)
+
+  let start: Date
+  let end: Date
+
+  if (params?.preferredDate) {
+    // Client asked for a specific date
+    start = fromZonedTime(`${params.preferredDate}T00:00:00`, timeZone)
+    if (start.getTime() < earliest.getTime()) {
+      start = earliest
+    }
+    end = addDays(start, 1)
+  } else {
+    start = earliest
+    const daysAhead = Math.min(params?.daysAhead || 7, config.maxAdvanceDays || 14)
+    end = addDays(now, daysAhead)
+  }
+
+  try {
+    const busyItems = await listBusyTimes({
+      calendarId: prereqs.details.calendarId,
+      timeMin: start.toISOString(),
+      timeMax: end.toISOString(),
+      timeZone,
+    })
+
+    const bufferMs = config.slotBufferMinutes * 60 * 1000
+    const busy = busyItems.map((item) => ({
+      startMs: new Date(item.start).getTime(),
+      endMs: new Date(item.end).getTime(),
+    }))
+
+    const slots: AvailableSlot[] = []
+    const slotMs = config.slotDurationMinutes * 60 * 1000
+    let cursor = start
+
+    while (cursor.getTime() + slotMs <= end.getTime() && slots.length < MAX_SLOTS_TO_SHOW) {
+      const slotEnd = new Date(cursor.getTime() + slotMs)
+
+      const insideWorkingHours = isSlotInsideWorkingHours(
+        cursor,
+        slotEnd,
+        timeZone,
+        config.workingHours
+      )
+
+      const overlaps = config.allowSimultaneous
+        ? false
+        : busy.some(
+            (b) =>
+              cursor.getTime() - bufferMs < b.endMs &&
+              slotEnd.getTime() + bufferMs > b.startMs
+          )
+
+      if (insideWorkingHours && !overlaps) {
+        const dayOfWeek = Number(formatInTimeZone(cursor, timeZone, 'i'))
+        const dayLabel = WEEKDAY_LABELS[WEEKDAY_KEYS[dayOfWeek - 1]]
+        const dateStr = formatInTimeZone(cursor, timeZone, 'dd/MM')
+        const timeStr = formatInTimeZone(cursor, timeZone, 'HH:mm')
+        const endTimeStr = formatInTimeZone(slotEnd, timeZone, 'HH:mm')
+
+        slots.push({
+          start: cursor.toISOString(),
+          end: slotEnd.toISOString(),
+          label: `${dayLabel} ${dateStr} às ${timeStr}–${endTimeStr}`,
+        })
+      }
+
+      cursor = addMinutes(cursor, config.slotDurationMinutes)
+    }
+
+    const dateRangeStr = `${formatInTimeZone(start, timeZone, 'dd/MM')} a ${formatInTimeZone(end, timeZone, 'dd/MM')}`
+
+    if (slots.length === 0) {
+      return {
+        available: false,
+        slots: [],
+        dateRange: dateRangeStr,
+        timezone: timeZone,
+        slotDurationMinutes: config.slotDurationMinutes,
+        message: `Não encontrei horários disponíveis de ${dateRangeStr}. Posso verificar outras datas.`,
+      }
+    }
+
+    // Group slots by day for a readable message
+    const byDay = new Map<string, AvailableSlot[]>()
+    for (const slot of slots) {
+      const dayKey = formatInTimeZone(new Date(slot.start), timeZone, 'yyyy-MM-dd')
+      if (!byDay.has(dayKey)) byDay.set(dayKey, [])
+      byDay.get(dayKey)!.push(slot)
+    }
+
+    const lines: string[] = []
+    for (const [, daySlots] of byDay) {
+      const firstSlot = daySlots[0]
+      const dayOfWeek = Number(formatInTimeZone(new Date(firstSlot.start), timeZone, 'i'))
+      const dayLabel = WEEKDAY_LABELS[WEEKDAY_KEYS[dayOfWeek - 1]]
+      const dateStr = formatInTimeZone(new Date(firstSlot.start), timeZone, 'dd/MM')
+
+      const times = daySlots
+        .map((s) => formatInTimeZone(new Date(s.start), timeZone, 'HH:mm'))
+        .join(', ')
+      lines.push(`${dayLabel} ${dateStr}: ${times}`)
+    }
+
+    return {
+      available: true,
+      slots,
+      dateRange: dateRangeStr,
+      timezone: timeZone,
+      slotDurationMinutes: config.slotDurationMinutes,
+      message: `Horários disponíveis (${dateRangeStr}):\n${lines.join('\n')}`,
+    }
+  } catch (error) {
+    console.error('[calendar-text-booking] Error checking availability:', error)
+    return {
+      available: false,
+      slots: [],
+      dateRange: '',
+      timezone: timeZone,
+      slotDurationMinutes: config.slotDurationMinutes,
+      message: 'Erro ao consultar disponibilidade. Tente novamente em instantes.',
+    }
   }
 }
 
 // =============================================================================
-// TOOL DEFINITION (for use with Vercel AI SDK)
+// CONFIRM BOOKING
 // =============================================================================
 
 /**
- * Tool description for AI agents.
- * This is used by the LLM to understand when to call the tool.
+ * Cria um evento no Google Calendar com os dados do agendamento.
+ *
+ * @param slotStart - ISO string do início do slot escolhido
+ * @param customerName - Nome do cliente
+ * @param customerPhone - Telefone do cliente
+ * @param service - Tipo de serviço (opcional)
+ * @param notes - Observações adicionais (opcional)
  */
-export const BOOKING_TOOL_DESCRIPTION = `Envia o formulário de agendamento interativo para o cliente.
-Use esta ferramenta quando o cliente:
-- Quiser agendar um horário, consulta ou atendimento
-- Perguntar sobre disponibilidade de agenda
-- Quiser ver os horários disponíveis
-- Mencionar que quer marcar/reservar algo
+export async function confirmBooking(params: {
+  slotStart: string
+  customerName: string
+  customerPhone: string
+  service?: string
+  notes?: string
+}): Promise<BookingResult> {
+  const prereqs = await checkTextBookingPrerequisites()
 
-NÃO invente horários ou datas - deixe o formulário mostrar a disponibilidade real.`
+  if (!prereqs.ready || !prereqs.details.calendarId) {
+    return {
+      success: false,
+      error: `Agendamento indisponível: ${prereqs.missing.join(', ')}`,
+    }
+  }
+
+  const config = await getCalendarBookingConfig()
+  const timeZone = prereqs.details.timezone || config.timezone
+
+  const slotStart = new Date(params.slotStart)
+  if (isNaN(slotStart.getTime())) {
+    return { success: false, error: 'Data/hora inválida para o agendamento.' }
+  }
+
+  // Determine duration based on service
+  let durationMinutes = config.slotDurationMinutes
+  if (params.service) {
+    const services = await getBookingServices()
+    const serviceInfo = services.find(
+      (s) => s.id === params.service || s.title.toLowerCase() === params.service?.toLowerCase()
+    )
+    if (serviceInfo?.durationMinutes) {
+      durationMinutes = serviceInfo.durationMinutes
+    }
+  }
+
+  const slotEnd = addMinutes(slotStart, durationMinutes)
+
+  // Double-check the slot is still available (skip if simultaneous bookings allowed)
+  if (!config.allowSimultaneous) {
+    try {
+      const busyItems = await listBusyTimes({
+        calendarId: prereqs.details.calendarId,
+        timeMin: slotStart.toISOString(),
+        timeMax: slotEnd.toISOString(),
+        timeZone,
+      })
+
+      if (busyItems.length > 0) {
+        return {
+          success: false,
+          error: 'Este horário acabou de ser ocupado. Por favor escolha outro horário.',
+        }
+      }
+    } catch (error) {
+      console.error('[calendar-text-booking] Error checking busy times:', error)
+      return {
+        success: false,
+        error: 'Erro ao verificar disponibilidade. Tente novamente.',
+      }
+    }
+  }
+
+  // Build event summary
+  const serviceName = params.service || 'Atendimento'
+  const summary = `${serviceName} - ${params.customerName}`
+
+  try {
+    const event = await createEvent({
+      calendarId: prereqs.details.calendarId,
+      event: {
+        summary,
+        description: [
+          `Cliente: ${params.customerName}`,
+          `Telefone: ${params.customerPhone}`,
+          params.notes ? `Observações: ${params.notes}` : null,
+          '',
+          'Agendado via WhatsApp (IA - SmartZap)',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        start: {
+          dateTime: slotStart.toISOString(),
+          timeZone,
+        },
+        end: {
+          dateTime: slotEnd.toISOString(),
+          timeZone,
+        },
+      },
+    })
+
+    const formattedDate = formatInTimeZone(slotStart, timeZone, 'dd/MM/yyyy')
+    const formattedTime = formatInTimeZone(slotStart, timeZone, 'HH:mm')
+    const formattedEndTime = formatInTimeZone(slotEnd, timeZone, 'HH:mm')
+
+    console.log(`[calendar-text-booking] ✅ Event created: ${event.id} for ${params.customerPhone}`)
+
+    return {
+      success: true,
+      eventId: event.id || 'created',
+      eventLink: event.htmlLink,
+      summary: `${serviceName} em ${formattedDate} às ${formattedTime}–${formattedEndTime}`,
+    }
+  } catch (error) {
+    console.error('[calendar-text-booking] Error creating event:', error)
+    return {
+      success: false,
+      error: 'Erro ao criar o agendamento. Tente novamente.',
+    }
+  }
+}
+
+// =============================================================================
+// TOOL DESCRIPTIONS (for use with Vercel AI SDK)
+// =============================================================================
+
+export const CHECK_AVAILABILITY_DESCRIPTION = `Consulta horários disponíveis na agenda para agendamento.
+Use esta ferramenta quando o cliente:
+- Perguntar sobre disponibilidade de horários
+- Quiser saber quando pode ser atendido
+- Pedir para agendar algo (primeiro consulte disponibilidade)
+- Mencionar uma data específica para ver horários
+
+Parâmetros opcionais:
+- daysAhead: quantos dias à frente consultar (padrão: 7)
+- preferredDate: se o cliente mencionou uma data específica (formato YYYY-MM-DD)
+
+Após receber os slots, apresente-os ao cliente de forma organizada e pergunte qual prefere.`
+
+export const CONFIRM_BOOKING_DESCRIPTION = `Confirma e cria o agendamento no calendário.
+Use esta ferramenta SOMENTE depois que:
+1. Você já consultou a disponibilidade (checkAvailability)
+2. O cliente escolheu um horário específico
+3. Você tem o nome do cliente (pergunte se não tiver)
+
+IMPORTANTE: O campo slotStart deve ser o ISO string exato de um dos slots retornados por checkAvailability.
+NÃO invente horários - use apenas os que foram retornados.`
