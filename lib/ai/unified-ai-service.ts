@@ -59,43 +59,60 @@ export interface GenerateTextResult {
 
 /**
  * Obtém os provedores disponíveis com base nas chaves configuradas.
- * Tenta usar o provider principal primeiro, seguido do fallback.
+ * CORRIGIDO: usa apenas o provider primário, sem fallback hardcoded
+ * que causava erro "gpt-4o-mini not found in v1beta" quando o provider
+ * primário era Google.
  */
 function getAvailableProviders(config: AiDirectConfig, modelOverride?: string) {
     const primaryProvider = config.provider
     const primaryModel = modelOverride || config.model
 
+    // VALIDAÇÃO: não permite inicializar sem modelo válido
+    if (!primaryModel || primaryModel.trim() === '') {
+        console.error('[getAvailableProviders] ❌ Modelo não configurado. Configure em /settings/ai')
+        return []
+    }
+
     const providers: { name: string, modelId: string, instance: any }[] = []
 
     const addGoogle = () => {
-        if (config.googleApiKey) {
-            const modelId = primaryProvider === 'google' ? primaryModel : 'gemini-1.5-flash'
-            providers.push({
-                name: 'google',
-                modelId,
-                instance: createGoogleGenerativeAI({ apiKey: config.googleApiKey })(modelId)
-            })
-        }
+        if (!config.googleApiKey) return
+        // Usa modelo configurado SOMENTE se Google for o primário
+        // Caso contrário, fallback seguro do próprio Google (não OpenAI)
+        const modelId = primaryProvider === 'google'
+            ? primaryModel
+            : 'gemini-1.5-flash-latest'
+        providers.push({
+            name: 'google',
+            modelId,
+            instance: createGoogleGenerativeAI({ apiKey: config.googleApiKey })(modelId)
+        })
     }
 
     const addOpenAI = () => {
-        if (config.openaiApiKey) {
-            const modelId = primaryProvider === 'openai' ? primaryModel : 'gpt-4o-mini'
-            providers.push({
-                name: 'openai',
-                modelId,
-                instance: createOpenAI({ apiKey: config.openaiApiKey })(modelId)
-            })
-        }
+        if (!config.openaiApiKey) return
+        // Usa modelo configurado SOMENTE se OpenAI for o primário
+        // Caso contrário, fallback seguro do próprio OpenAI
+        const modelId = primaryProvider === 'openai'
+            ? primaryModel
+            : 'gpt-4o'
+        providers.push({
+            name: 'openai',
+            modelId,
+            instance: createOpenAI({ apiKey: config.openaiApiKey })(modelId)
+        })
     }
 
-    // Prioridade baseada na configuração
+    // Prioridade baseada na configuração — primário SEMPRE primeiro
     if (primaryProvider === 'google') {
         addGoogle()
         addOpenAI()
-    } else {
+    } else if (primaryProvider === 'openai') {
         addOpenAI()
         addGoogle()
+    } else {
+        console.error(`[getAvailableProviders] ❌ Provider inválido: ${primaryProvider}`)
+        return []
     }
 
     return providers
