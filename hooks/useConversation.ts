@@ -43,6 +43,9 @@ export function useConversation(conversationId: string | null) {
     },
     enabled: !!conversationId,
     staleTime: CACHE.inbox,
+    refetchOnWindowFocus: true, // volta a buscar ao focar a aba
+    refetchInterval: 10000, // fallback de polling se o Realtime cair
+    refetchIntervalInBackground: false,
     // Stop retrying if conversation not found (404)
     retry: (failureCount, error) => {
       if (error instanceof Error && error.message.includes('404')) return false
@@ -186,7 +189,9 @@ export function useMessages(conversationId: string | null) {
     },
     initialPageParam: undefined as string | undefined,
     staleTime: CACHE.inbox,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true, // volta a buscar ao focar a aba
+    refetchInterval: 8000, // fallback: poll a cada 8s mesmo se o Realtime cair
+    refetchIntervalInBackground: false,
   })
 
   // Realtime subscription for new messages
