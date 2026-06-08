@@ -70,7 +70,9 @@ export function useConversations(params: UseConversationsParams = {}) {
     queryFn: () => inboxService.listConversations(queryParams),
     initialData: queryInitialData,
     staleTime: CACHE.inbox, // 30s - user-facing list with realtime updates
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true, // volta a buscar ao focar a aba
+    refetchInterval: 10000, // fallback: poll a cada 10s mesmo se o Realtime cair
+    refetchIntervalInBackground: false,
     // Real-time configuration
     table: 'inbox_conversations',
     events: ['INSERT', 'UPDATE', 'DELETE'],
