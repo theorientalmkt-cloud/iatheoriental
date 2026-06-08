@@ -977,8 +977,13 @@ export async function POST(request: NextRequest) {
             })
             console.log(`📥 Inbox: conversation=${inboxResult.conversationId}, message=${inboxResult.messageId}, ai=${inboxResult.triggeredAI}`)
           } catch (inboxError) {
-            // Best-effort: don't fail webhook if inbox persist fails
-            console.warn('[Webhook] Failed to persist to inbox:', inboxError)
+            // Best-effort: não derruba o webhook se a persistência falhar — mas loga COM contexto pra debug
+            console.error('[Webhook] ❌ PERSIST FAILED', {
+              messageId: message.id,
+              from,
+              phoneNumberId,
+              error: inboxError instanceof Error ? inboxError.stack : String(inboxError),
+            })
           }
 
           // =================================================================
