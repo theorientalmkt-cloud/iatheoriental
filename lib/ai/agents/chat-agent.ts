@@ -806,9 +806,16 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
           // silenciosamente conversas com termos sensíveis (alergias, restrições,
           // contexto médico/saúde, etc.) retornando finishReason=error sem warning.
           // BLOCK_ONLY_HIGH = só bloqueia conteúdo claramente perigoso, não falso-positivo.
+          // Gemini "thinking" (modelos 2.5 / *-latest) quebra o tool-calling, gerando
+          // "Malformed function call" e finishReason=error. Desligar o raciocínio
+          // (thinkingBudget=0) resolve. Aplicado SÓ nesses modelos — 1.5/2.0 não recebem a opção.
+          const isGeminiThinking = /2\.5|latest|thinking/i.test(modelId)
           const providerOptions = resolvedProvider === 'google'
             ? {
                 google: {
+                  ...(isGeminiThinking
+                    ? { thinkingConfig: { thinkingBudget: 0, includeThoughts: false } }
+                    : {}),
                   safetySettings: [
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
                     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
