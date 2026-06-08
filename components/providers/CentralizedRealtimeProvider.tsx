@@ -176,6 +176,10 @@ export function CentralizedRealtimeProvider({
       isConnectedRef.current = status === 'SUBSCRIBED'
       if (status === 'SUBSCRIBED') {
         hasLoggedError = false // Reset para logar novamente se reconectar e falhar depois
+        // Ao (re)conectar, invalida as queries do inbox para recuperar o que chegou enquanto estava offline
+        queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] })
+        queryClient.invalidateQueries({ queryKey: ['inbox-messages'] })
+        queryClient.invalidateQueries({ queryKey: ['inbox-unread-count'] })
       } else if ((status === 'CLOSED' || status === 'CHANNEL_ERROR') && !hasLoggedError) {
         // Loga apenas uma vez para não poluir o console
         console.warn('[Realtime] Conexão falhou. Tentando reconectar automaticamente...')
