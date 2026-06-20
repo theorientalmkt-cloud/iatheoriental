@@ -357,8 +357,10 @@ export default function AtendimentoPage() {
     isRefetching,
     refetch,
   } = useAttendantConversations({
-    status: 'open',
+    // Sem filtro de status: puxa TODO o histórico (abertas, fechadas e resolvidas).
+    // O filtro por aba (Todos/Urgente/IA/Humano) é aplicado no cliente, mais abaixo.
     search: searchQuery || undefined,
+    limit: 500,
   })
 
   // Filtrar conversas por tab
