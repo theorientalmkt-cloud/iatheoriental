@@ -62,7 +62,7 @@ export async function getConversations(
   filters: ConversationFilters = {}
 ): Promise<PaginatedConversations> {
   const supabase = getClient()
-  const { status, mode, labelId, search, page = 1, limit = 20 } = filters
+  const { status, mode, labelId, search, page = 1, limit = 100 } = filters
 
   let query = supabase
     .from('inbox_conversations')
