@@ -42,6 +42,8 @@ interface UseAttendantConversationsOptions {
   search?: string
   enabled?: boolean
   refetchInterval?: number
+  /** Máximo de conversas a carregar. Default da API = 500. Use um valor alto para puxar todo o histórico. */
+  limit?: number
 }
 
 // =============================================================================
@@ -50,11 +52,13 @@ interface UseAttendantConversationsOptions {
 
 async function fetchConversations(
   status?: string,
-  search?: string
+  search?: string,
+  limit?: number
 ): Promise<ConversationsResponse> {
   const params = new URLSearchParams()
   if (status) params.set('status', status)
   if (search) params.set('search', search)
+  if (limit) params.set('limit', String(limit))
 
   const url = `/api/attendant/conversations${params.toString() ? `?${params}` : ''}`
   const response = await fetch(url)
@@ -76,11 +80,12 @@ export function useAttendantConversations(options: UseAttendantConversationsOpti
     search,
     enabled = true,
     refetchInterval = 10000, // Refetch a cada 10 segundos
+    limit,
   } = options
 
   const query = useQuery({
-    queryKey: ['attendant-conversations', status, search],
-    queryFn: () => fetchConversations(status, search),
+    queryKey: ['attendant-conversations', status, search, limit],
+    queryFn: () => fetchConversations(status, search, limit),
     enabled,
     refetchInterval,
     staleTime: 5000, // Considera dados frescos por 5 segundos
