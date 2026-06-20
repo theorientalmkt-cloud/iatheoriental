@@ -43,7 +43,7 @@ export interface UseConversationsParams {
 
 export function useConversations(params: UseConversationsParams = {}) {
   const queryClient = useQueryClient()
-  const { page = 1, limit = 20, status, mode, labelId, search, initialData } = params
+  const { page = 1, limit = 100, status, mode, labelId, search, initialData } = params
 
   const queryParams: ConversationListParams = useMemo(
     () => ({ page, limit, status, mode, labelId, search }),
