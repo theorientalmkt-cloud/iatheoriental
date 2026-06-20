@@ -105,7 +105,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status') // 'open' | 'closed' | null (all)
     const search = searchParams.get('search')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = parseInt(searchParams.get('limit') || '500')
 
     // Query base
     let query = supabase
