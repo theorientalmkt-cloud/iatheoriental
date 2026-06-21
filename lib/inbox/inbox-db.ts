@@ -62,7 +62,7 @@ export async function getConversations(
   filters: ConversationFilters = {}
 ): Promise<PaginatedConversations> {
   const supabase = getClient()
-  const { status, mode, labelId, search, page = 1, limit = 100 } = filters
+  const { status, mode, labelId, search, page = 1, limit = 1000 } = filters
 
   let query = supabase
     .from('inbox_conversations')
@@ -84,7 +84,21 @@ export async function getConversations(
     query = query.eq('mode', mode)
   }
   if (search) {
-    query = query.or(`phone.ilike.%${search}%,contact.name.ilike.%${search}%`)
+    // Busca por telefone (coluna base) OU por nome do contato.
+    // O nome é resolvido via contact_id porque filtrar `contact.name` (tabela
+    // aninhada) dentro de .or() não restringe as linhas de cima no PostgREST.
+    const safe = search.replace(/[%,()*\\]/g, ' ').trim()
+    if (safe) {
+      const orParts = [`phone.ilike.%${safe}%`]
+      const { data: matched } = await supabase
+        .from('contacts')
+        .select('id')
+        .ilike('name', `%${safe}%`)
+        .limit(500)
+      const ids = (matched || []).map((c) => c.id).filter(Boolean)
+      if (ids.length) orParts.push(`contact_id.in.(${ids.join(',')})`)
+      query = query.or(orParts.join(','))
+    }
   }
 
   // Pagination

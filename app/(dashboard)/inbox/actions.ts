@@ -32,7 +32,7 @@ export const getInboxInitialData = cache(async (): Promise<InboxInitialData> => 
         )
       `)
       .order('last_message_at', { ascending: false })
-      .limit(100),
+      .limit(1000),
 
     // Labels
     supabase

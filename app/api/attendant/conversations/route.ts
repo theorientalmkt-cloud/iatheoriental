@@ -109,6 +109,25 @@ export async function GET(request: Request) {
     const limitParam = searchParams.get('limit')
     const maxToFetch = limitParam ? Math.max(1, parseInt(limitParam)) : Infinity
 
+    // Filtro de busca: telefone (coluna base) OU nome do contato.
+    // Nome resolvido via contact_id — filtrar `contact.name` em .or() não funciona
+    // no PostgREST (relação aninhada não restringe linhas de cima).
+    let searchOr: string | null = null
+    if (search) {
+      const safe = search.replace(/[%,()*\\]/g, ' ').trim()
+      if (safe) {
+        const parts = [`phone.ilike.%${safe}%`]
+        const { data: matched } = await supabase
+          .from('contacts')
+          .select('id')
+          .ilike('name', `%${safe}%`)
+          .limit(500)
+        const ids = (matched || []).map((c) => c.id).filter(Boolean)
+        if (ids.length) parts.push(`contact_id.in.(${ids.join(',')})`)
+        searchOr = parts.join(',')
+      }
+    }
+
     // Lê em lotes de 1000 (range) até esgotar — garante que NENHUMA conversa
     // fique de fora, independente do volume (não depende do max-rows do Supabase).
     const PAGE_SIZE = 1000
@@ -137,9 +156,9 @@ export async function GET(request: Request) {
         query = query.eq('status', 'closed')
       }
 
-      // Filtro por busca (nome do contato ou telefone)
-      if (search) {
-        query = query.or(`phone.ilike.%${search}%,contact.name.ilike.%${search}%`)
+      // Filtro por busca (telefone ou nome do contato — via contact_id)
+      if (searchOr) {
+        query = query.or(searchOr)
       }
 
       const { data, error } = await query
