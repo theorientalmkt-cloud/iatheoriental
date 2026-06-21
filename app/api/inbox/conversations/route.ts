@@ -13,7 +13,7 @@ const querySchema = z.object({
   label: z.string().uuid().optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(500).default(100),
+  limit: z.coerce.number().int().positive().max(5000).default(1000),
 })
 
 export async function GET(request: NextRequest) {
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       label: searchParams.get('label') || undefined,
       search: searchParams.get('search') || undefined,
       page: searchParams.get('page') || 1,
-      limit: searchParams.get('limit') || 20,
+      limit: searchParams.get('limit') || 1000,
     })
 
     if (!parsed.success) {
