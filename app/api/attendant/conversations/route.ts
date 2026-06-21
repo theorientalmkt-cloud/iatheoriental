@@ -105,37 +105,59 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status') // 'open' | 'closed' | null (all)
     const search = searchParams.get('search')
-    const limit = parseInt(searchParams.get('limit') || '500')
+    // Se 'limit' for informado, respeita como teto. Sem 'limit' = lê TODAS as conversas.
+    const limitParam = searchParams.get('limit')
+    const maxToFetch = limitParam ? Math.max(1, parseInt(limitParam)) : Infinity
 
-    // Query base
-    let query = supabase
-      .from('inbox_conversations')
-      .select(`
-        *,
-        contact:contacts(*),
-        ai_agent:ai_agents(id, name)
-      `)
-      .order('last_message_at', { ascending: false, nullsFirst: false })
-      .limit(limit)
+    // Lê em lotes de 1000 (range) até esgotar — garante que NENHUMA conversa
+    // fique de fora, independente do volume (não depende do max-rows do Supabase).
+    const PAGE_SIZE = 1000
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allRows: any[] = []
+    let offset = 0
 
-    // Filtro por status
-    if (status === 'open') {
-      query = query.eq('status', 'open')
-    } else if (status === 'closed') {
-      query = query.eq('status', 'closed')
+    while (allRows.length < maxToFetch) {
+      const pageSize =
+        maxToFetch === Infinity ? PAGE_SIZE : Math.min(PAGE_SIZE, maxToFetch - allRows.length)
+
+      let query = supabase
+        .from('inbox_conversations')
+        .select(`
+          *,
+          contact:contacts(*),
+          ai_agent:ai_agents(id, name)
+        `)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .range(offset, offset + pageSize - 1)
+
+      // Filtro por status
+      if (status === 'open') {
+        query = query.eq('status', 'open')
+      } else if (status === 'closed') {
+        query = query.eq('status', 'closed')
+      }
+
+      // Filtro por busca (nome do contato ou telefone)
+      if (search) {
+        query = query.or(`phone.ilike.%${search}%,contact.name.ilike.%${search}%`)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error('[attendant-api] Error fetching conversations:', error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+
+      const batch = data || []
+      allRows.push(...batch)
+
+      // Página incompleta = não há mais conversas
+      if (batch.length < pageSize) break
+      offset += batch.length
     }
 
-    // Filtro por busca (nome do contato ou telefone)
-    if (search) {
-      query = query.or(`phone.ilike.%${search}%,contact.name.ilike.%${search}%`)
-    }
-
-    const { data: conversations, error } = await query
-
-    if (error) {
-      console.error('[attendant-api] Error fetching conversations:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    const conversations = allRows
 
     // Transformar para formato do atendimento
     const attendantConversations = (conversations || []).map(transformConversation)

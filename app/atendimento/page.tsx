@@ -357,10 +357,10 @@ export default function AtendimentoPage() {
     isRefetching,
     refetch,
   } = useAttendantConversations({
-    // Sem filtro de status: puxa TODO o histórico (abertas, fechadas e resolvidas).
-    // O filtro por aba (Todos/Urgente/IA/Humano) é aplicado no cliente, mais abaixo.
+    // Sem filtro de status e sem limit: puxa TODAS as conversas do banco (o servidor
+    // lê em lotes de 1000 até esgotar). O filtro por aba (Todos/Urgente/IA/Humano)
+    // é aplicado no cliente, mais abaixo.
     search: searchQuery || undefined,
-    limit: 500,
   })
 
   // Filtrar conversas por tab
