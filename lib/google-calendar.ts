@@ -460,6 +460,42 @@ export async function createEvent(params: {
   })
 }
 
+export interface GoogleCalendarEvent {
+  id?: string
+  summary?: string
+  description?: string
+  status?: string
+  start?: { dateTime?: string; date?: string; timeZone?: string }
+  end?: { dateTime?: string; date?: string; timeZone?: string }
+  htmlLink?: string
+}
+
+/**
+ * Lista eventos de um calendário num intervalo. Usa singleEvents (expande
+ * recorrências) e ordena por horário de início. Usado pelo resumo semanal
+ * de agendamentos do dashboard.
+ */
+export async function listEvents(params: {
+  calendarId: string
+  timeMin: string
+  timeMax: string
+  timeZone?: string
+  maxResults?: number
+}): Promise<GoogleCalendarEvent[]> {
+  const qs = new URLSearchParams({
+    timeMin: params.timeMin,
+    timeMax: params.timeMax,
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: String(params.maxResults || 2500),
+  })
+  if (params.timeZone) qs.set('timeZone', params.timeZone)
+  const data = await googleCalendarFetch(
+    `/calendars/${encodeURIComponent(params.calendarId)}/events?${qs.toString()}`
+  )
+  return Array.isArray(data?.items) ? (data.items as GoogleCalendarEvent[]) : []
+}
+
 export async function stopWatchChannel(channel: { id: string; resourceId: string }): Promise<void> {
   try {
     await googleCalendarFetch('/channels/stop', {

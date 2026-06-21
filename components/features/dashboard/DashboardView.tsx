@@ -12,6 +12,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Campaign, CampaignStatus } from '../../../types';
 import { DashboardStats } from '../../../services/dashboardService';
 import { AISummaryCard } from './AISummaryCard';
+import { BookingsSummaryCard } from './BookingsSummaryCard';
 
 interface DashboardViewProps {
   stats: DashboardStats;
@@ -121,8 +122,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentCampa
         />
       </div>
 
-      {/* Card A — Panorama do dia (IA) */}
-      <AISummaryCard />
+      {/* Cards de IA: panorama do dia (conversas) + agendamentos da semana */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AISummaryCard />
+        <BookingsSummaryCard />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Chart Section */}
