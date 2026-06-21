@@ -11,6 +11,7 @@ import { Send, TrendingUp, AlertCircle, CheckCircle2, MoreHorizontal, ArrowUpRig
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from '@/components/ui/lazy-charts';
 import { Campaign, CampaignStatus } from '../../../types';
 import { DashboardStats } from '../../../services/dashboardService';
+import { AISummaryCard } from './AISummaryCard';
 
 interface DashboardViewProps {
   stats: DashboardStats;
@@ -119,6 +120,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentCampa
           loading={isLoading}
         />
       </div>
+
+      {/* Card A — Panorama do dia (IA) */}
+      <AISummaryCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Chart Section */}
