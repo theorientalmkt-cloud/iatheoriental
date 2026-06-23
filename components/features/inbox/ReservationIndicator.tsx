@@ -7,7 +7,6 @@
 
 import React from 'react'
 import { CalendarCheck } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface Reserva {
   id: string
@@ -64,16 +63,12 @@ export function ReservationIndicator({ phone }: { phone: string }) {
     .join('\n')
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className={`mt-1 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded w-fit ${color}`}>
-          <CalendarCheck className="h-2.5 w-2.5" />
-          Reserva {STATUS_LABEL[r.status] || r.status}: {ddmm(r.reservation_date)}{r.reservation_time ? ` ${r.reservation_time}` : ''} · {r.party_size}p{extra}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs whitespace-pre-line">
-        {data.upcoming.length} reserva(s) futura(s):{'\n'}{tooltip}
-      </TooltipContent>
-    </Tooltip>
+    <span
+      title={`${data.upcoming.length} reserva(s) futura(s):\n${tooltip}`}
+      className={`mt-1 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded w-fit ${color}`}
+    >
+      <CalendarCheck className="h-2.5 w-2.5" />
+      Reserva {STATUS_LABEL[r.status] || r.status}: {ddmm(r.reservation_date)}{r.reservation_time ? ` ${r.reservation_time}` : ''} · {r.party_size}p{extra}
+    </span>
   )
 }

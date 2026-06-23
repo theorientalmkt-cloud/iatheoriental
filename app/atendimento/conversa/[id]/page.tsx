@@ -12,6 +12,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { ReservationIndicator } from '@/components/features/inbox/ReservationIndicator'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -246,6 +247,7 @@ function Header({
         <p className="text-[13px] text-[var(--geist-foreground-tertiary)] truncate">
           {conversation.contact?.phone || conversation.phone}
         </p>
+        <ReservationIndicator phone={conversation.contact?.phone || conversation.phone} />
       </div>
 
       {/* Theme toggle with amber color */}
