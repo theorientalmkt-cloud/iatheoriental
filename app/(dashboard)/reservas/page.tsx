@@ -3,7 +3,7 @@
 import React from 'react'
 import { Page, PageHeader, PageTitle, PageDescription, PageActions } from '@/components/ui/page'
 import { Container } from '@/components/ui/container'
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Users, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Users, X, Download } from 'lucide-react'
 import {
   reservationService,
   RESERVATION_LOCATIONS,
@@ -56,6 +56,7 @@ export default function ReservasPage() {
   const [form, setForm] = React.useState<ReservationInput | null>(null)
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  const [importing, setImporting] = React.useState(false)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -68,6 +69,20 @@ export default function ReservasPage() {
       setLoading(false)
     }
   }, [])
+
+  const handleImport = async () => {
+    if (!confirm('Importar as reservas do Google Calendar para a plataforma? As reservas já importadas serão atualizadas.')) return
+    setImporting(true)
+    try {
+      const r = await reservationService.importFromCalendar()
+      alert(`Importação concluída: ${r.imported} reserva(s) importada(s) do Google Calendar.`)
+      await load()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro ao importar do Google Calendar')
+    } finally {
+      setImporting(false)
+    }
+  }
 
   React.useEffect(() => { load() }, [load])
 
@@ -165,6 +180,13 @@ export default function ReservasPage() {
           <PageDescription>Calendário interno — lance e edite as reservas por data, local e nº de pessoas (até 3 meses à frente).</PageDescription>
         </div>
         <PageActions>
+          <button
+            onClick={handleImport}
+            disabled={importing}
+            className="border border-[var(--ds-border-default)] text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)] hover:bg-[var(--ds-bg-hover)] px-4 py-2 rounded-lg font-medium text-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50"
+          >
+            <Download size={16} /> {importing ? 'Importando…' : 'Importar do Google Calendar'}
+          </button>
           <button
             onClick={openNew}
             className="bg-primary-600 text-white hover:bg-primary-500 px-4 py-2 rounded-lg font-semibold text-sm transition-colors inline-flex items-center gap-2"
