@@ -618,7 +618,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
         checkTextBookingPrerequisites,
         CHECK_AVAILABILITY_DESCRIPTION,
         CONFIRM_BOOKING_DESCRIPTION,
-      } = await import('@/lib/ai/tools/calendar-text-booking-tool')
+      } = await import('@/lib/ai/tools/internal-booking-tool')
 
       const textPrereqs = await checkTextBookingPrerequisites()
       console.log(`[chat-agent] 📅 Text booking prereqs: ready=${textPrereqs.ready}, missing=${textPrereqs.missing.join(', ') || 'none'}`)
@@ -633,7 +633,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
           execute: async ({ daysAhead, preferredDate }) => {
             console.log(`[chat-agent] 📅 LLM requested availability check: daysAhead=${daysAhead}, preferredDate=${preferredDate}`)
             const result = await checkAvailability({ daysAhead, preferredDate })
-            console.log(`[chat-agent] 📅 Availability: available=${result.available}, slots=${result.slots.length}`)
+            console.log(`[chat-agent] 📅 Availability: available=${result.available}, dias=${result.days?.length ?? 0}`)
             return result
           },
         })
@@ -657,7 +657,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
               notes,
             })
             if (result.success) {
-              console.log(`[chat-agent] ✅ Booking confirmed: ${result.eventId}`)
+              console.log(`[chat-agent] ✅ Booking confirmed: ${result.reservationId}`)
             } else {
               console.log(`[chat-agent] ❌ Booking failed: ${result.error}`)
             }
