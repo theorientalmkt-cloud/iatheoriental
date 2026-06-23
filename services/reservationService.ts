@@ -65,6 +65,11 @@ export const reservationService = {
     const res = await fetch(`/api/reservations/${id}`, { method: 'DELETE' })
     await handle<{ success: boolean }>(res)
   },
+
+  async importFromCalendar(): Promise<{ imported: number; ignored: number; totalEventsLidos: number; intervalo: string }> {
+    const res = await fetch('/api/reservations/import-calendar', { method: 'POST' })
+    return handle(res)
+  },
 }
 
 export const RESERVATION_LOCATIONS = ['Balcão interno', 'Deck-janela'] as const
