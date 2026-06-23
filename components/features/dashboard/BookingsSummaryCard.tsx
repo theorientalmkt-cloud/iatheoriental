@@ -64,10 +64,10 @@ export const BookingsSummaryCard: React.FC = () => {
             <CalendarDays size={18} aria-hidden="true" />
           </span>
           <div>
-            <h3 className="text-heading-4">Reservas da semana</h3>
+            <h3 className="text-heading-4">Próximas reservas</h3>
             <p className="text-[11px] text-[var(--ds-text-muted)]">
               {data?.rangeLabel
-                ? `Próximos 7 dias (${data.rangeLabel})${data.generatedAt ? ` · ${timeAgo(data.generatedAt)}` : ''}`
+                ? `Próximos 30 dias (${data.rangeLabel})${data.generatedAt ? ` · ${timeAgo(data.generatedAt)}` : ''}`
                 : 'Resumo das reservas internas'}
             </p>
           </div>
@@ -101,7 +101,7 @@ export const BookingsSummaryCard: React.FC = () => {
               <span className="text-lg font-semibold text-primary-500 tabular-nums flex items-center gap-1">
                 <Users size={15} /> {data.totalPessoas ?? 0}
               </span>
-              <span className="text-[11px] text-[var(--ds-text-muted)] leading-tight">pessoas / semana</span>
+              <span className="text-[11px] text-[var(--ds-text-muted)] leading-tight">pessoas no período</span>
             </div>
             <div className="flex flex-col rounded-lg bg-[var(--ds-bg-hover)] px-3 py-2 min-w-[80px]">
               <span className="text-lg font-semibold text-[var(--ds-text-primary)] tabular-nums">{data.total ?? 0}</span>

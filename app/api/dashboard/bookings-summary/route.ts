@@ -5,7 +5,7 @@
  * O CÓDIGO faz a contagem exata (pessoas por local × data × status); a IA apenas
  * narra os números prontos — assim ela nunca erra a conta.
  *
- * Janela: próximos 7 dias. Cache de 1h em `settings` (?refresh=1 força regenerar).
+ * Janela: próximos 30 dias. Cache de 1h em `settings` (?refresh=1 força regenerar).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: 'Supabase não configurado' }, { status: 500 })
 
   const today = formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')
-  const end = formatInTimeZone(addDays(new Date(`${today}T12:00:00`), 7), TZ, 'yyyy-MM-dd')
+  const end = formatInTimeZone(addDays(new Date(`${today}T12:00:00`), 30), TZ, 'yyyy-MM-dd')
   const rangeLabel = `${ddmm(today)} a ${ddmm(end)}`
 
   const { data, error } = await supabase
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
 
   if (total === 0) {
     const result: BookingsResult = {
-      summary: `Nenhuma reserva para os próximos 7 dias (${rangeLabel}).`,
+      summary: `Nenhuma reserva para os próximos 30 dias (${rangeLabel}).`,
       total: 0,
       totalPessoas: 0,
       porStatus,
@@ -161,14 +161,14 @@ export async function GET(request: NextRequest) {
   const statusLinha = porStatus.map((s) => `${s.status}: ${s.qtd}`).join(', ')
 
   const system = `Você é o assistente de operações do restaurante japonês The Oriental Sushiya.
-Escreva um RESUMO SEMANAL das reservas para o gestor, em português brasileiro.
+Escreva um RESUMO das reservas dos próximos 30 dias para o gestor, em português brasileiro.
 Regras IMPORTANTES:
 - Os números abaixo já estão calculados e CORRETOS. Use-os exatamente como estão. NÃO recalcule, NÃO some, NÃO invente.
 - 1 parágrafo curto de panorama (total de pessoas e reservas na semana, dia mais cheio).
 - Depois 2 a 4 bullets de destaques (dias/locais com mais gente, pendências de confirmação).
 - Não exponha telefones.`
 
-  const prompt = `Reservas dos próximos 7 dias (${rangeLabel}):
+  const prompt = `Reservas dos próximos 30 dias (${rangeLabel}):
 - Total: ${totalPessoas} pessoas em ${total} reservas
 - Por status: ${statusLinha}
 - Detalhe por dia e local:
@@ -183,10 +183,10 @@ Escreva o resumo usando exatamente esses números.`
     summary = (ai.text || '').trim()
     model = ai.model
     if (model === 'fallback-none' || model === 'error-fallback' || !summary) {
-      summary = `${totalPessoas} pessoas em ${total} reservas nos próximos 7 dias (${rangeLabel}). (Resumo da IA indisponível — verifique a chave em Configurações → IA.)`
+      summary = `${totalPessoas} pessoas em ${total} reservas nos próximos 30 dias (${rangeLabel}). (Resumo da IA indisponível — verifique a chave em Configurações → IA.)`
     }
   } catch (e) {
-    summary = `${totalPessoas} pessoas em ${total} reservas nos próximos 7 dias (${rangeLabel}).`
+    summary = `${totalPessoas} pessoas em ${total} reservas nos próximos 30 dias (${rangeLabel}).`
     console.error('[dashboard/bookings-summary] erro IA:', e)
   }
 
