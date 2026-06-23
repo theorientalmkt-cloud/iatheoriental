@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const TZ = 'America/Sao_Paulo'
-const CACHE_KEY = 'dashboard_bookings_summary_cache'
+const CACHE_KEY = 'dashboard_bookings_summary_cache_v2'
 const TTL_MS = 60 * 60 * 1000
 const WEEKDAYS_ISO: Record<number, string> = { 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom' }
 const CANCELLED = new Set(['cancelado', 'no_show'])
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from('reservations')
-    .select('reservation_date, reservation_time, location, party_size, guest_name, menu_choice, status')
+    .select('*')
     .gte('reservation_date', today)
     .lte('reservation_date', end)
     .order('reservation_date', { ascending: true })

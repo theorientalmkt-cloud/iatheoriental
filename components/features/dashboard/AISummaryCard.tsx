@@ -94,7 +94,7 @@ export const AISummaryCard: React.FC = () => {
       </div>
 
       {/* Mini-stats */}
-      {data && (
+      {data?.stats && (
         <div className="flex flex-wrap gap-2 mb-5">
           <StatChip label="Ativas hoje" value={data.stats.totalAtivasHoje} />
           <StatChip label="Novas" value={data.stats.novasHoje} />
@@ -124,7 +124,7 @@ export const AISummaryCard: React.FC = () => {
       )}
 
       {/* Rodapé com ícones contextuais */}
-      {data && !loading && !error && (
+      {data?.stats && !loading && !error && (
         <div className="flex flex-wrap gap-4 mt-5 pt-4 border-t border-[var(--ds-border-subtle)] text-[11px] text-[var(--ds-text-muted)]">
           <span className="flex items-center gap-1.5"><Bot size={13} /> {data.stats.emBot} na IA</span>
           <span className="flex items-center gap-1.5"><UserRound size={13} /> {data.stats.emHumano} com humano</span>
