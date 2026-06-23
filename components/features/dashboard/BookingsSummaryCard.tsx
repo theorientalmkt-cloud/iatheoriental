@@ -99,15 +99,15 @@ export const BookingsSummaryCard: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <div className="flex flex-col rounded-lg bg-primary-500/10 px-3 py-2 min-w-[92px]">
               <span className="text-lg font-semibold text-primary-500 tabular-nums flex items-center gap-1">
-                <Users size={15} /> {data.totalPessoas}
+                <Users size={15} /> {data.totalPessoas ?? 0}
               </span>
               <span className="text-[11px] text-[var(--ds-text-muted)] leading-tight">pessoas / semana</span>
             </div>
             <div className="flex flex-col rounded-lg bg-[var(--ds-bg-hover)] px-3 py-2 min-w-[80px]">
-              <span className="text-lg font-semibold text-[var(--ds-text-primary)] tabular-nums">{data.total}</span>
+              <span className="text-lg font-semibold text-[var(--ds-text-primary)] tabular-nums">{data.total ?? 0}</span>
               <span className="text-[11px] text-[var(--ds-text-muted)] leading-tight">reservas</span>
             </div>
-            {data.porStatus.map((s) => (
+            {(data.porStatus || []).map((s) => (
               <div key={s.status} className="flex flex-col rounded-lg bg-[var(--ds-bg-hover)] px-3 py-2 min-w-[72px]">
                 <span className="text-base font-semibold text-[var(--ds-text-primary)] tabular-nums">{s.qtd}</span>
                 <span className="text-[11px] text-[var(--ds-text-muted)] leading-tight capitalize">{s.status}</span>
@@ -119,15 +119,15 @@ export const BookingsSummaryCard: React.FC = () => {
           <p className="text-sm leading-relaxed text-[var(--ds-text-secondary)] whitespace-pre-wrap">{data.summary}</p>
 
           {/* detalhe por dia × local (números exatos) */}
-          {data.porDia.length > 0 && (
+          {(data.porDia || []).length > 0 && (
             <div className="mt-5 pt-4 border-t border-[var(--ds-border-subtle)] space-y-2">
               <p className="text-[11px] uppercase tracking-wide text-[var(--ds-text-muted)]">Por dia e local</p>
-              {data.porDia.map((d) => (
+              {(data.porDia || []).map((d) => (
                 <div key={d.data} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
                   <span className="text-[var(--ds-text-primary)] font-medium w-[88px] shrink-0">{d.dia}</span>
                   <span className="text-[var(--ds-text-muted)] tabular-nums">{d.pessoas}p / {d.reservas}r</span>
                   <span className="text-[var(--ds-text-muted)] text-xs">
-                    — {d.porLocal.map((l) => `${l.local}: ${l.pessoas}p`).join(' · ')}
+                    — {(d.porLocal || []).map((l) => `${l.local}: ${l.pessoas}p`).join(' · ')}
                   </span>
                 </div>
               ))}
