@@ -66,6 +66,7 @@ import type {
   ConversationPriority,
 } from '@/types'
 import { ContactMemoriesSheet } from './ContactMemoriesSheet'
+import { ReservationIndicator } from './ReservationIndicator'
 import { formatPhoneNumberDisplay } from '@/lib/phone-formatter'
 
 export interface ConversationHeaderProps {
@@ -237,6 +238,7 @@ export function ConversationHeader({
             )}
           </div>
           <span className="text-[10px] text-[var(--ds-text-muted)]">{formatPhoneNumberDisplay(phone, 'e164')}</span>
+          <div><ReservationIndicator phone={phone} /></div>
         </div>
       </div>
 
