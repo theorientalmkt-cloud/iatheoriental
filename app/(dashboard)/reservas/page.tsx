@@ -311,7 +311,12 @@ export default function ReservasPage() {
                   <input type="date" className={inputCls} value={form.reservation_date} onChange={(e) => setF({ reservation_date: e.target.value })} />
                 </label>
                 <label className="text-xs text-[var(--ds-text-muted)]">Horário
-                  <input type="text" placeholder="19:00" className={inputCls} value={form.reservation_time || ''} onChange={(e) => setF({ reservation_time: e.target.value })} />
+                  <select className={inputCls} value={form.reservation_time || ''} onChange={(e) => setF({ reservation_time: e.target.value })}>
+                    <option value="">—</option>
+                    <option value="13:00">13:00 (Almoço XP)</option>
+                    <option value="19:00">19:00 (Jantar)</option>
+                    <option value="21:00">21:00 (Jantar)</option>
+                  </select>
                 </label>
               </div>
               <div className="grid grid-cols-2 gap-3">

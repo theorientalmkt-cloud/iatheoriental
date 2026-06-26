@@ -68,6 +68,12 @@ function ddmm(dateStr: string): string {
   return formatInTimeZone(new Date(`${dateStr}T12:00:00`), TZ, 'dd/MM')
 }
 
+/** Um turno (data + horario) so e valido se existir na grade da casa
+ * (XP 13h Qui-Dom; Nippon 19h/21h Ter-Sab). */
+function isValidSlot(dateStr: string, time: string): boolean {
+  return turnosForWeekday(weekdayOf(dateStr)).some((t) => t.time === time)
+}
+
 // =============================================================================
 // PREREQUISITES
 // =============================================================================
@@ -208,6 +214,16 @@ export async function confirmBooking(params: {
 
   const reservation_date = formatInTimeZone(start, TZ, 'yyyy-MM-dd')
   const reservation_time = formatInTimeZone(start, TZ, 'HH:mm')
+
+  // Valida o turno: so 13h (XP, Qui-Dom) ou 19h/21h (Nippon, Ter-Sab).
+  // Bloqueia horarios invalidos (ex.: 18h) mesmo que o LLM tente criar.
+  if (!isValidSlot(reservation_date, reservation_time)) {
+    return {
+      success: false,
+      error: 'Horario invalido para reserva. Os turnos validos sao: Almoco Omakase XP as 13h (quinta a domingo) e Jantar Omakase Nippon as 19h ou 21h (terca a sabado). Ofereca um desses ao cliente.',
+    }
+  }
+
   const notes = params.notes || ''
 
   // Extrai dados do bloco estruturado de notes (formato que o prompt já gera)
