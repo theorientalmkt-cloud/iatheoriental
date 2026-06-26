@@ -125,6 +125,14 @@ export async function POST(request: NextRequest) {
     const reservation_time = ev.start?.dateTime ? formatInTimeZone(startDate, timeZone, 'HH:mm') : null
     const text = `${summary}\n${desc}`
 
+    // So importa turnos validos da casa: 13h (XP, Qui-Dom) ou 19h/21h (Nippon, Ter-Sab).
+    // Pula eventos em horario invalido (ex.: 18h) para nao poluir as reservas.
+    const wd = Number(formatInTimeZone(startDate, timeZone, 'i')) % 7
+    const validForTime =
+      (reservation_time === '13:00' && [4, 5, 6, 0].includes(wd)) ||
+      ((reservation_time === '19:00' || reservation_time === '21:00') && wd >= 2 && wd <= 6)
+    if (!validForTime) { ignored++; continue }
+
     rows.push({
       reservation_date,
       reservation_time,
