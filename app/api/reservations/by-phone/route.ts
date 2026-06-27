@@ -27,15 +27,21 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from('reservations')
-    .select('id, reservation_date, reservation_time, party_size, location, status, menu_choice, guest_name')
-    .or(`guest_phone.ilike.%${last}%,whatsapp_id.ilike.%${last}%`)
+    .select('id, reservation_date, reservation_time, party_size, location, status, menu_choice, guest_name, guest_phone, whatsapp_id')
+    // sufixo (não "contém") — reduz falso positivo já na query
+    .or(`guest_phone.ilike.%${last},whatsapp_id.ilike.%${last}`)
     .order('reservation_date', { ascending: true })
     .limit(50)
 
   if (error) return NextResponse.json({ hasReservation: false, upcoming: [], next: null, total: 0 })
 
   const today = formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')
-  const all = data || []
+  // Confirma o match por SUFIXO exato (DDD+número) — evita casar número diferente
+  const all = (data || []).filter((r) => {
+    const gp = String(r.guest_phone || '').replace(/\D/g, '')
+    const wa = String(r.whatsapp_id || '').replace(/\D/g, '')
+    return gp.endsWith(last) || wa.endsWith(last)
+  })
   const upcoming = all.filter(
     (r) => String(r.reservation_date) >= today && !CANCELLED.has(String(r.status || '').toLowerCase())
   )

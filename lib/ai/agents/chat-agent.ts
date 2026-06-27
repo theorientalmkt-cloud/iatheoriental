@@ -17,7 +17,7 @@
 
 import { z } from 'zod'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import { DEFAULT_MODEL_ID } from '@/lib/ai/model'
+import { DEFAULT_MODEL_ID, getDefaultModel } from '@/lib/ai/model'
 import { getAiDirectConfig } from '@/lib/ai/ai-center-config'
 import type { AIAgent, InboxConversation, InboxMessage } from '@/types'
 
@@ -375,8 +375,9 @@ export async function processChatAgent(
 
   // O provedor configurado diretamente no agente deve SEMPRE ter prioridade sobre o global.
   // Isso garante que se a UI disser "OpenAI", usamos OpenAI.
-  const resolvedProvider = agent.provider || directConfig.provider || 'google'
-  const modelId = agent.model || directConfig.model || DEFAULT_MODEL_ID
+  // `let` porque o failover pode trocar provedor/modelo em tempo de execução
+  let resolvedProvider = agent.provider || directConfig.provider || 'google'
+  let modelId = agent.model || directConfig.model || DEFAULT_MODEL_ID
 
   // Criar instância do modelo com a chave correspondente ao provedor
   let rawModel
@@ -408,8 +409,35 @@ export async function processChatAgent(
     }
   }
 
-  const model = await withDevTools(rawModel, { name: `agente:${agent.name}` })
+  let model = await withDevTools(rawModel, { name: `agente:${agent.name}` })
   console.log(`[chat-agent] Using ${resolvedProvider}/${modelId}`)
+
+  // ---------------------------------------------------------------------------
+  // FAILOVER entre provedores (Gemini ↔ OpenAI)
+  // Se o provedor primário cair (timeout/erro repetido), troca UMA vez para o
+  // outro provedor configurado e reinicia as tentativas com ele. No-op quando
+  // só há uma chave — comportamento idêntico ao atual. O modelo primário
+  // continua sendo o configurado; o alternativo só entra quando o primário falha.
+  // ---------------------------------------------------------------------------
+  let failoverTried = false
+  async function attemptProviderFailover(): Promise<boolean> {
+    if (failoverTried) return false
+    const altProvider = resolvedProvider === 'google' ? 'openai' : 'google'
+    const altKey = altProvider === 'openai' ? directConfig.openaiApiKey : directConfig.googleApiKey
+    if (!altKey) return false // sem chave do outro provedor → não há failover
+    const altModelId =
+      getDefaultModel(altProvider)?.id || (altProvider === 'openai' ? 'gpt-4o-mini' : DEFAULT_MODEL_ID)
+    const altRaw =
+      altProvider === 'openai'
+        ? createOpenAI({ apiKey: altKey })(altModelId)
+        : createGoogleGenerativeAI({ apiKey: altKey })(altModelId)
+    model = await withDevTools(altRaw, { name: `agente:${agent.name}:failover` })
+    console.warn(`[chat-agent] 🔁 FAILOVER ${resolvedProvider}/${modelId} → ${altProvider}/${altModelId}`)
+    resolvedProvider = altProvider
+    modelId = altModelId
+    failoverTried = true
+    return true
+  }
 
   // Check if agent has indexed content in pgvector
   let hasKnowledgeBase = false
@@ -583,7 +611,21 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       const flowPrereqs = await checkBookingPrerequisites()
       console.log(`[chat-agent] 📅 Flow prereqs: ready=${flowPrereqs.ready}, missing=${flowPrereqs.missing.join(', ') || 'none'}`)
 
-      if (flowPrereqs.ready) {
+      // --- Via B: prereqs avaliados ANTES para decidir a via primária ---
+      const {
+        checkAvailability,
+        confirmBooking,
+        checkTextBookingPrerequisites,
+        CHECK_AVAILABILITY_DESCRIPTION,
+        CONFIRM_BOOKING_DESCRIPTION,
+      } = await import('@/lib/ai/tools/internal-booking-tool')
+      const textPrereqs = await checkTextBookingPrerequisites()
+      console.log(`[chat-agent] 📅 Text booking prereqs: ready=${textPrereqs.ready}, missing=${textPrereqs.missing.join(', ') || 'none'}`)
+
+      // Via primária = texto (interna, lê a tabela `reservations`). O Flow da Meta
+      // entra só como FALLBACK quando a via texto não está pronta — evita a IA
+      // escolher na hora entre dois caminhos e marcar por vias divergentes.
+      if (flowPrereqs.ready && !textPrereqs.ready) {
         const sendBookingFlowTool = tool({
           description: BOOKING_TOOL_DESCRIPTION,
           inputSchema: z.object({
@@ -611,18 +653,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
         console.log(`[chat-agent] 📅 sendBookingFlow tool added`)
       }
 
-      // --- Via B: Booking por texto (checkAvailability + confirmBooking) ---
-      const {
-        checkAvailability,
-        confirmBooking,
-        checkTextBookingPrerequisites,
-        CHECK_AVAILABILITY_DESCRIPTION,
-        CONFIRM_BOOKING_DESCRIPTION,
-      } = await import('@/lib/ai/tools/internal-booking-tool')
-
-      const textPrereqs = await checkTextBookingPrerequisites()
-      console.log(`[chat-agent] 📅 Text booking prereqs: ready=${textPrereqs.ready}, missing=${textPrereqs.missing.join(', ') || 'none'}`)
-
+      // --- Via B: Booking por texto (checkAvailability + confirmBooking) — via primária ---
       if (textPrereqs.ready) {
         const checkAvailabilityTool = tool({
           description: CHECK_AVAILABILITY_DESCRIPTION,
@@ -871,8 +902,10 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
               providerAttempt++
               continue
             }
-            // Esgotou tentativas: propaga pro catch externo
+            // Esgotou tentativas neste provedor: tenta failover p/ o outro
             clearTimeout(timeoutId)
+            if (await attemptProviderFailover()) { providerAttempt = 0; continue }
+            // Sem failover disponível: propaga pro catch externo
             throw lastProviderError
           }
 
@@ -918,7 +951,10 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             continue
           }
 
-          // Esgotou retries de provider: propaga pro catch externo (handoff)
+          // Esgotou retries neste provedor: tenta failover p/ o outro provedor
+          if (await attemptProviderFailover()) { providerAttempt = 0; continue }
+
+          // Sem failover disponível: propaga pro catch externo (handoff)
           if (isTimeout) {
             throw new Error(`AI call timed out after ${MAX_PROVIDER_RETRIES + 1} attempts of ${AI_TIMEOUT_MS / 1000}s each`)
           }
