@@ -62,7 +62,9 @@ export default function ReservasPage() {
     setLoading(true)
     setError(null)
     try {
-      setReservations(await reservationService.list())
+      // Esconde canceladas da visão ativa do calendário (continuam no banco p/ auditoria)
+      const list = await reservationService.list()
+      setReservations(list.filter((r) => String(r.status || '').toLowerCase() !== 'cancelado'))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar reservas')
     } finally {
@@ -160,12 +162,12 @@ export default function ReservasPage() {
   }
 
   const del = async (id: string) => {
-    if (!confirm('Excluir esta reserva?')) return
+    if (!confirm('Cancelar esta reserva? Ela sai das ativas, mas o histórico é mantido.')) return
     try {
       await reservationService.remove(id)
       await load()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Erro ao excluir')
+      alert(e instanceof Error ? e.message : 'Erro ao cancelar')
     }
   }
 
@@ -287,7 +289,7 @@ export default function ReservasPage() {
                       <Pencil size={12} /> Editar
                     </button>
                     <button onClick={() => del(r.id)} className="text-[11px] text-red-500 hover:text-red-400 inline-flex items-center gap-1">
-                      <Trash2 size={12} /> Excluir
+                      <Trash2 size={12} /> Cancelar
                     </button>
                   </div>
                 </div>

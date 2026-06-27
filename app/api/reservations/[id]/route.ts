@@ -58,7 +58,8 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ error: 'Supabase não configurado' }, { status: 500 })
 
-  const { error } = await supabase.from('reservations').delete().eq('id', id)
+  // Soft-delete: marca como cancelada (preserva histórico/auditoria; não conta na lotação)
+  const { error } = await supabase.from('reservations').update({ status: 'cancelado' }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

@@ -12,7 +12,7 @@
  */
 
 import { getSupabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
-import { formatInTimeZone } from 'date-fns-tz'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { addDays } from 'date-fns'
 
 const TZ = 'America/Sao_Paulo'
@@ -109,7 +109,8 @@ export async function checkAvailability(params?: {
   }
 
   const today = formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')
-  const nowHHmm = formatInTimeZone(new Date(), TZ, 'HH:mm')
+  // Corte de antecedência mínima (data+hora completas, com minutos)
+  const cutoffMs = Date.now() + MIN_ADVANCE_HOURS * 60 * 60 * 1000
 
   let dates: string[] = []
   if (params?.preferredDate && /^\d{4}-\d{2}-\d{2}$/.test(params.preferredDate)) {
@@ -147,12 +148,9 @@ export async function checkAvailability(params?: {
     const wd = weekdayOf(d)
     const turnos: TurnoVagas[] = []
     for (const tn of turnosForWeekday(wd)) {
-      // pula turnos de hoje sem antecedência mínima
-      if (d === today) {
-        const [h] = tn.time.split(':').map(Number)
-        const [nowH] = nowHHmm.split(':').map(Number)
-        if (h - nowH < MIN_ADVANCE_HOURS) continue
-      }
+      // antecedência mínima — compara o instante completo do turno (com minutos)
+      const slotMs = fromZonedTime(`${d}T${tn.time}:00`, TZ).getTime()
+      if (slotMs < cutoffMs) continue
       const k = `${d}|${tn.time}`
       turnos.push({
         ...tn,
