@@ -222,6 +222,32 @@ export async function confirmBooking(params: {
     }
   }
 
+  // Trava anti-duplicidade: o mesmo cliente (telefone) nao pode ter duas reservas
+  // ativas no MESMO dia. A IA nao enxerga reservas individuais (REGRA 1/3 do prompt),
+  // entao o bloqueio confiavel precisa acontecer aqui no sistema.
+  const phoneDigits = String(params.customerPhone || '').replace(/\D/g, '')
+  if (phoneDigits.length >= 8) {
+    const last = phoneDigits.slice(-11)
+    const { data: sameDay } = await supabase
+      .from('reservations')
+      .select('reservation_time, guest_phone, whatsapp_id, status')
+      .eq('reservation_date', reservation_date)
+    const dup = (sameDay || []).find((r) => {
+      if (CANCELLED.has(String(r.status || '').toLowerCase())) return false
+      const gp = String(r.guest_phone || '').replace(/\D/g, '')
+      const wa = String(r.whatsapp_id || '').replace(/\D/g, '')
+      return (!!gp && gp.endsWith(last)) || (!!wa && wa.endsWith(last))
+    })
+    if (dup) {
+      const t = normalizeTime(dup.reservation_time)
+      const formattedDup = reservation_date.split('-').reverse().join('/')
+      return {
+        success: false,
+        error: `Este cliente ja possui uma reserva ativa em ${formattedDup}${t ? ` as ${t}` : ''}. Nao crie outra reserva para o mesmo dia. Informe o cliente que a reserva desse dia ja existe e pergunte se deseja ajustar ou manter a atual.`,
+      }
+    }
+  }
+
   const notes = params.notes || ''
 
   // Extrai dados do bloco estruturado de notes (formato que o prompt já gera)
