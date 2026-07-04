@@ -223,27 +223,30 @@ export async function confirmBooking(params: {
   }
 
   // Trava anti-duplicidade: o mesmo cliente (telefone) nao pode ter duas reservas
-  // ativas no MESMO dia. A IA nao enxerga reservas individuais (REGRA 1/3 do prompt),
-  // entao o bloqueio confiavel precisa acontecer aqui no sistema.
+  // ativas no MESMO horario/turno (mesma data + mesmo horario). Ele PODE reservar
+  // turnos diferentes no mesmo dia (ex.: 19h para um grupo e 21h para outro).
+  // Como cada turno tem apenas 9 lugares, a trava protege a lotacao do turno.
+  // A IA nao enxerga reservas individuais (REGRA 1/3 do prompt), entao o bloqueio
+  // confiavel precisa acontecer aqui no sistema.
   const phoneDigits = String(params.customerPhone || '').replace(/\D/g, '')
   if (phoneDigits.length >= 8) {
     const last = phoneDigits.slice(-11)
-    const { data: sameDay } = await supabase
+    const { data: sameSlot } = await supabase
       .from('reservations')
       .select('reservation_time, guest_phone, whatsapp_id, status')
       .eq('reservation_date', reservation_date)
-    const dup = (sameDay || []).find((r) => {
+    const dup = (sameSlot || []).find((r) => {
       if (CANCELLED.has(String(r.status || '').toLowerCase())) return false
+      if (normalizeTime(r.reservation_time) !== reservation_time) return false // so bloqueia o MESMO turno
       const gp = String(r.guest_phone || '').replace(/\D/g, '')
       const wa = String(r.whatsapp_id || '').replace(/\D/g, '')
       return (!!gp && gp.endsWith(last)) || (!!wa && wa.endsWith(last))
     })
     if (dup) {
-      const t = normalizeTime(dup.reservation_time)
       const formattedDup = reservation_date.split('-').reverse().join('/')
       return {
         success: false,
-        error: `Este cliente ja possui uma reserva ativa em ${formattedDup}${t ? ` as ${t}` : ''}. Nao crie outra reserva para o mesmo dia. Informe o cliente que a reserva desse dia ja existe e pergunte se deseja ajustar ou manter a atual.`,
+        error: `Este cliente ja possui uma reserva ativa em ${formattedDup} as ${reservation_time}. Nao crie outra reserva para o MESMO horario. Informe o cliente que ele ja tem reserva nesse horario; se quiser, ele pode escolher outro horario disponivel no mesmo dia.`,
       }
     }
   }
