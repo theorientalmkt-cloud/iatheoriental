@@ -455,6 +455,8 @@ export async function processChatAgent(
   let response: SupportResponse | undefined
   let error: string | null = null
   let sources: Array<{ title: string; content: string }> | undefined
+  // Rede de seguranca (nivel 3): marca se a IA REALMENTE consultou disponibilidade neste turno
+  let calledCheckAvailability = false
 
   try {
     // =======================================================================
@@ -662,6 +664,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             preferredDate: z.string().optional().describe('Data específica solicitada pelo cliente (formato YYYY-MM-DD)'),
           }),
           execute: async ({ daysAhead, preferredDate }) => {
+            calledCheckAvailability = true
             console.log(`[chat-agent] 📅 LLM requested availability check: daysAhead=${daysAhead}, preferredDate=${preferredDate}`)
             const result = await checkAvailability({ daysAhead, preferredDate })
             console.log(`[chat-agent] 📅 Availability: available=${result.available}, dias=${result.days?.length ?? 0}`)
@@ -1011,6 +1014,46 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       // "LLM tentou chamar uma tool que não tinha schema válido")
       // (definido fora do try, este é o snapshot final)
     })
+  }
+
+  // =========================================================================
+  // REDE DE SEGURANCA (nivel 3) — a IA NUNCA afirma disponibilidade sem consultar.
+  // Se a resposta fala de vagas/horarios/lotacao mas o checkAvailability NAO foi
+  // chamado neste turno, o sistema consulta agora e REFAZ a resposta com os dados
+  // reais. Mata o caso "nao temos vaga hoje" quando na verdade ha vaga.
+  // =========================================================================
+  if (response && agent.booking_tool_enabled && !calledCheckAvailability) {
+    const assertsAvailability =
+      /n[ãa]o\s+(temos|tem|h[áa])\s+(vaga|hor[áa]ri|dispon)|sem\s+(vaga|hor[áa]ri|dispon)|lotad|indispon[íi]vel|(temos|tem|h[áa])\s+(vaga|hor[áa]ri|dispon)|\d+\s+vaga/i
+    if (assertsAvailability.test(response.message)) {
+      try {
+        const { checkAvailability } = await import('@/lib/ai/tools/internal-booking-tool')
+        const avail = await checkAvailability({ daysAhead: 14 })
+        console.warn('[chat-agent] 🛡️ Rede de seguranca: IA afirmou disponibilidade SEM consultar. Refazendo com dados reais.')
+        const grounded = await generateText({
+          model,
+          system:
+            `${agent.system_prompt || ''}\n\n` +
+            `## DADOS REAIS DE DISPONIBILIDADE (consultados agora — fonte da verdade)\n${avail.message}\n\n` +
+            `Sua resposta anterior foi:\n"${response.message}"\n\n` +
+            `Essa resposta pode ter afirmado disponibilidade sem consultar o sistema. Reescreva-a corrigindo QUALQUER afirmacao sobre vagas ou horarios para bater exatamente com os DADOS REAIS acima. Se um turno aparece como LOTADO ou nao consta na lista, nao o ofereca. Nao invente horarios nem vagas. Responda apenas com a mensagem final ao cliente, mantendo o tom sofisticado e cordial, em texto simples e sem emojis.`,
+          messages: aiMessages,
+          temperature: agent.temperature ?? DEFAULT_TEMPERATURE,
+          maxOutputTokens: agent.max_tokens ?? DEFAULT_MAX_TOKENS,
+        })
+        const groundedText = (grounded.text || '').trim()
+        if (groundedText) {
+          response = {
+            ...response,
+            message: convertMarkdownToWhatsApp(groundedText),
+            confidence: Math.min(response.confidence ?? 0.5, 0.6),
+          }
+          console.log('[chat-agent] 🛡️ Resposta refeita com disponibilidade real.')
+        }
+      } catch (gErr) {
+        console.error('[chat-agent] 🛡️ Rede de seguranca falhou (mantendo resposta original):', gErr instanceof Error ? gErr.message : gErr)
+      }
+    }
   }
 
   const latencyMs = Date.now() - startTime
