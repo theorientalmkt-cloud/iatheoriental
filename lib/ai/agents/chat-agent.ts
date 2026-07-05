@@ -458,6 +458,18 @@ export async function processChatAgent(
   // Rede de seguranca (nivel 3): marca se a IA REALMENTE consultou disponibilidade neste turno
   let calledCheckAvailability = false
 
+  // Data/hora atuais (America/Sao_Paulo) — sem isso a IA "chuta" datas (ex.: "dia 11" -> novembro).
+  const TZ_SP = 'America/Sao_Paulo'
+  const nowExtensoSP = new Date().toLocaleString('pt-BR', {
+    timeZone: TZ_SP, weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+  const nowYmdSP = new Date().toLocaleDateString('en-CA', { timeZone: TZ_SP })
+  const dateContextBlock =
+    `## DATA E HORA ATUAIS (America/Sao_Paulo)\n` +
+    `Agora e ${nowExtensoSP} (hoje = ${nowYmdSP}). Use SEMPRE esta data como referencia. ` +
+    `Quando o cliente disser apenas o dia ou o dia da semana (ex.: "dia 11", "sabado"), calcule a proxima data ` +
+    `correspondente A PARTIR de hoje — nunca chute mes ou ano diferente e nunca sugira datas passadas.`
+
   try {
     // =======================================================================
     // TOOL-BASED RAG: LLM decides when to search
@@ -468,19 +480,19 @@ export async function processChatAgent(
     // Default false: handoff agora é opt-in. Evita LLMs com prompt fraco transferirem sem motivo.
     const handoffEnabled = agent.handoff_enabled ?? false
 
-    // Build system prompt: base + contact context + handoff instructions + memory context
+    // Build system prompt: base + data atual + contact context + handoff instructions + memory context
     let systemPrompt = agent.system_prompt
 
-    // Adiciona contexto do contato (nome, email)
+    // Injeta a data/hora atuais no contexto (evita a IA "chutar" datas)
+    systemPrompt += `\n\n${dateContextBlock}`
+
+    // Adiciona contexto do contato (nome, email). NAO injeta "Cliente desde":
+    // a REGRA 1 do prompt proibe a IA de citar a data de cadastro do contato.
     const { contactData } = config
     if (contactData && (contactData.name || contactData.email)) {
       const contactLines: string[] = []
       if (contactData.name) contactLines.push(`- Nome: ${contactData.name}`)
       if (contactData.email) contactLines.push(`- Email: ${contactData.email}`)
-      if (contactData.created_at) {
-        const date = new Date(contactData.created_at).toLocaleDateString('pt-BR')
-        contactLines.push(`- Cliente desde: ${date}`)
-      }
       systemPrompt += `\n\n## Contexto do Contato\n${contactLines.join('\n')}`
     }
 
@@ -1017,38 +1029,48 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
   }
 
   // =========================================================================
-  // REDE DE SEGURANCA (nivel 3) — a IA NUNCA afirma disponibilidade sem consultar.
-  // Se a resposta fala de vagas/horarios/lotacao mas o checkAvailability NAO foi
-  // chamado neste turno, o sistema consulta agora e REFAZ a resposta com os dados
-  // reais. Mata o caso "nao temos vaga hoje" quando na verdade ha vaga.
+  // REDE DE SEGURANCA (nivel 3) — a IA nunca NEGA nem AFIRMA disponibilidade errada.
+  // Dispara em dois casos:
+  //  a) A resposta NEGA disponibilidade ("sem vaga", "nao temos horario/turno") —
+  //     mesmo que a IA tenha chamado a ferramenta (pode ter ignorado o resultado).
+  //     Se houver vaga real no periodo, REFAZ a resposta com os dados reais.
+  //  b) A resposta AFIRMA vagas mas a IA NAO chamou a ferramenta — verifica.
   // =========================================================================
-  if (response && agent.booking_tool_enabled && !calledCheckAvailability) {
-    const assertsAvailability =
-      /n[ãa]o\s+(temos|tem|h[áa])\s+(vaga|hor[áa]ri|dispon)|sem\s+(vaga|hor[áa]ri|dispon)|lotad|indispon[íi]vel|(temos|tem|h[áa])\s+(vaga|hor[áa]ri|dispon)|\d+\s+vaga/i
-    if (assertsAvailability.test(response.message)) {
+  if (response && agent.booking_tool_enabled) {
+    const negaDisponibilidade =
+      /(n[ãa]o\s+(temos|tem|h[áa]|possu[íi]mos|existe[m]?)|sem\b|indispon|lotad|esgotad|nenhum)[^.!?\n]{0,60}(vaga|hor[áa]ri|dispon|turno|agenda)/i.test(response.message)
+    const afirmaVagas =
+      /(temos|tem|h[áa])\s+[^.!?\n]{0,25}(vaga|hor[áa]ri|dispon)|\b\d+\s+vaga/i.test(response.message)
+
+    if (negaDisponibilidade || (afirmaVagas && !calledCheckAvailability)) {
       try {
         const { checkAvailability } = await import('@/lib/ai/tools/internal-booking-tool')
-        const avail = await checkAvailability({ daysAhead: 14 })
-        console.warn('[chat-agent] 🛡️ Rede de seguranca: IA afirmou disponibilidade SEM consultar. Refazendo com dados reais.')
-        const grounded = await generateText({
-          model,
-          system:
-            `${agent.system_prompt || ''}\n\n` +
-            `## DADOS REAIS DE DISPONIBILIDADE (consultados agora — fonte da verdade)\n${avail.message}\n\n` +
-            `Sua resposta anterior foi:\n"${response.message}"\n\n` +
-            `Essa resposta pode ter afirmado disponibilidade sem consultar o sistema. Reescreva-a corrigindo QUALQUER afirmacao sobre vagas ou horarios para bater exatamente com os DADOS REAIS acima. Se um turno aparece como LOTADO ou nao consta na lista, nao o ofereca. Nao invente horarios nem vagas. Responda apenas com a mensagem final ao cliente, mantendo o tom sofisticado e cordial, em texto simples e sem emojis.`,
-          messages: aiMessages,
-          temperature: agent.temperature ?? DEFAULT_TEMPERATURE,
-          maxOutputTokens: agent.max_tokens ?? DEFAULT_MAX_TOKENS,
-        })
-        const groundedText = (grounded.text || '').trim()
-        if (groundedText) {
-          response = {
-            ...response,
-            message: convertMarkdownToWhatsApp(groundedText),
-            confidence: Math.min(response.confidence ?? 0.5, 0.6),
+        const avail = await checkAvailability({ daysAhead: 21 })
+        // Negativa: so refaz se REALMENTE ha vaga em algum dia (senao a negativa procede).
+        // Afirmacao sem consulta: sempre verifica.
+        const deveRefazer = negaDisponibilidade ? avail.available : true
+        if (deveRefazer) {
+          console.warn(`[chat-agent] 🛡️ Rede de seguranca disparou (nega=${negaDisponibilidade}, afirma=${afirmaVagas}, consultou=${calledCheckAvailability}). Refazendo com dados reais.`)
+          const grounded = await generateText({
+            model,
+            system:
+              `${agent.system_prompt || ''}\n\n${dateContextBlock}\n\n` +
+              `## DADOS REAIS DE DISPONIBILIDADE (consultados agora — fonte da verdade)\n${avail.message}\n\n` +
+              `Sua resposta anterior foi:\n"${response.message}"\n\n` +
+              `Essa resposta pode ter negado ou afirmado disponibilidade de forma incorreta. Reescreva-a usando SOMENTE os DADOS REAIS acima: se o dia/horario que o cliente pediu tem vaga, ofereca; se aquele dia esta lotado ou nao funciona, diga isso e ofereca a data valida mais proxima COM vaga que aparece nos dados. NUNCA diga que nao ha vaga se os dados mostram vaga. Nao invente horarios nem vagas. Responda apenas com a mensagem final ao cliente, tom sofisticado e cordial, texto simples, sem emojis.`,
+            messages: aiMessages,
+            temperature: agent.temperature ?? DEFAULT_TEMPERATURE,
+            maxOutputTokens: agent.max_tokens ?? DEFAULT_MAX_TOKENS,
+          })
+          const groundedText = (grounded.text || '').trim()
+          if (groundedText) {
+            response = {
+              ...response,
+              message: convertMarkdownToWhatsApp(groundedText),
+              confidence: Math.min(response.confidence ?? 0.5, 0.6),
+            }
+            console.log('[chat-agent] 🛡️ Resposta refeita com disponibilidade real.')
           }
-          console.log('[chat-agent] 🛡️ Resposta refeita com disponibilidade real.')
         }
       } catch (gErr) {
         console.error('[chat-agent] 🛡️ Rede de seguranca falhou (mantendo resposta original):', gErr instanceof Error ? gErr.message : gErr)
