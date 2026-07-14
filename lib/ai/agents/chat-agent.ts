@@ -17,7 +17,7 @@
 
 import { z } from 'zod'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import { DEFAULT_MODEL_ID, getDefaultModel } from '@/lib/ai/model'
+import { DEFAULT_MODEL_ID } from '@/lib/ai/model'
 import { getAiDirectConfig } from '@/lib/ai/ai-center-config'
 import type { AIAgent, InboxConversation, InboxMessage } from '@/types'
 
@@ -267,6 +267,8 @@ async function persistAILog(data: {
   latencyMs: number
   error: string | null
   modelUsed: string
+  failover?: boolean
+  primaryModel?: string
 }): Promise<string | undefined> {
   try {
     const supabase = getSupabaseAdmin()
@@ -292,6 +294,9 @@ async function persistAILog(data: {
           confidence: data.output?.confidence,
           shouldHandoff: data.output?.shouldHandoff,
           handoffReason: data.output?.handoffReason,
+          // Observabilidade do failover: torna VISIVEL quando o primario falhou
+          failover: data.failover ?? false,
+          primaryModel: data.primaryModel || data.modelUsed,
         },
       })
       .select('id')
@@ -378,6 +383,7 @@ export async function processChatAgent(
   // `let` porque o failover pode trocar provedor/modelo em tempo de execução
   let resolvedProvider = agent.provider || directConfig.provider || 'google'
   let modelId = agent.model || directConfig.model || DEFAULT_MODEL_ID
+  const primaryModelId = modelId // modelo primário (antes de qualquer failover), para o log
 
   // Criar instância do modelo com a chave correspondente ao provedor
   let rawModel
@@ -425,8 +431,8 @@ export async function processChatAgent(
     const altProvider = resolvedProvider === 'google' ? 'openai' : 'google'
     const altKey = altProvider === 'openai' ? directConfig.openaiApiKey : directConfig.googleApiKey
     if (!altKey) return false // sem chave do outro provedor → não há failover
-    const altModelId =
-      getDefaultModel(altProvider)?.id || (altProvider === 'openai' ? 'gpt-4o-mini' : DEFAULT_MODEL_ID)
+    // Reserva RAPIDA: gpt-4o-mini (o gpt-4o e lento). Se o primario for OpenAI, cai no Gemini.
+    const altModelId = altProvider === 'openai' ? 'gpt-4o-mini' : DEFAULT_MODEL_ID
     const altRaw =
       altProvider === 'openai'
         ? createOpenAI({ apiKey: altKey })(altModelId)
@@ -1091,6 +1097,8 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       latencyMs,
       error: null,
       modelUsed: modelId,
+      failover: failoverTried,
+      primaryModel: primaryModelId,
     })
 
     // Save interaction to Mem0 (fire-and-forget, não bloqueia resposta)
@@ -1136,6 +1144,8 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
     latencyMs,
     error,
     modelUsed: modelId,
+    failover: failoverTried,
+    primaryModel: primaryModelId,
   })
 
   return {
