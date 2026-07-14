@@ -127,6 +127,8 @@ export interface SupportAgentResult {
   error?: string
   latencyMs: number
   logId?: string
+  /** true quando uma reserva foi confirmada neste turno (dispara o envio do link da loja) */
+  reservationConfirmed?: boolean
 }
 
 // =============================================================================
@@ -467,6 +469,8 @@ export async function processChatAgent(
   let calledCheckAvailability = false
   // Erro do provedor PRIMARIO quando ocorre failover — gravado no log para nunca mais adivinhar
   let primaryError: string | undefined
+  // Marca se uma reserva foi confirmada neste turno (dispara o envio do link da loja)
+  let reservationConfirmed = false
 
   // Data/hora atuais (America/Sao_Paulo) — sem isso a IA "chuta" datas (ex.: "dia 11" -> novembro).
   const TZ_SP = 'America/Sao_Paulo'
@@ -495,6 +499,18 @@ export async function processChatAgent(
 
     // Injeta a data/hora atuais no contexto (evita a IA "chutar" datas)
     systemPrompt += `\n\n${dateContextBlock}`
+
+    // Injeta os DADOS DA LOJA (endereço) — fonte FIXA no banco, não no prompt.
+    // Assim a IA sempre acerta o endereço e você atualiza sem editar o prompt.
+    try {
+      const { getStoreInfo } = await import('@/lib/store-info')
+      const store = await getStoreInfo()
+      if (store.address) {
+        systemPrompt += `\n\n## DADOS DA LOJA (oficiais — use SEMPRE estes, nunca invente)\nEndereço: ${store.address}`
+      }
+    } catch {
+      // segue sem os dados da loja
+    }
 
     // Adiciona contexto do contato (nome, email). NAO injeta "Cliente desde":
     // a REGRA 1 do prompt proibe a IA de citar a data de cadastro do contato.
@@ -713,6 +729,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
               notes,
             })
             if (result.success) {
+              reservationConfirmed = true
               console.log(`[chat-agent] ✅ Booking confirmed: ${result.reservationId}`)
             } else {
               console.log(`[chat-agent] ❌ Booking failed: ${result.error}`)
@@ -1127,7 +1144,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       })
     }
 
-    return { success: true, response, latencyMs, logId }
+    return { success: true, response, latencyMs, logId, reservationConfirmed }
   }
 
   // Error case - fallback amigável (sem handoff automático).
@@ -1165,5 +1182,6 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
     error: error || 'Unknown error',
     latencyMs,
     logId,
+    reservationConfirmed,
   }
 }
