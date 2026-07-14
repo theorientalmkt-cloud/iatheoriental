@@ -292,6 +292,34 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ [AI-RESPOND] All ${messageIds.length} messages sent`)
 
+    // Função FIXA: após uma reserva confirmada, envia o link do WhatsApp da loja
+    // (pagamento/detalhes). Fonte: settings.store_info — não depende do prompt.
+    if (result.reservationConfirmed) {
+      try {
+        const { getStoreInfo, storeWhatsAppLink } = await import('@/lib/store-info')
+        const store = await getStoreInfo()
+        const link = storeWhatsAppLink(store.whatsappConfirm)
+        if (store.sendLinkAfterBooking && link) {
+          const linkMsg = `Para finalizar o pagamento e os detalhes da sua reserva, fale com a nossa equipe: ${link}`
+          await new Promise((r) => setTimeout(r, 900))
+          const sent = await sendWhatsAppMessage({ to: conversation.phone, type: 'text', text: linkMsg })
+          if (sent.success && sent.messageId) {
+            await inboxDb.createMessage({
+              conversation_id: conversationId,
+              direction: 'outbound',
+              content: linkMsg,
+              message_type: 'text',
+              whatsapp_message_id: sent.messageId,
+              delivery_status: 'sent',
+            })
+            console.log(`✅ [AI-RESPOND] Link da loja enviado após reserva confirmada`)
+          }
+        }
+      } catch (e) {
+        console.error(`⚠️ [AI-RESPOND] Falha ao enviar link da loja:`, e)
+      }
+    }
+
     // 10. Handoff se necessário
     if (result.response.shouldHandoff) {
       console.log(`🔄 [AI-RESPOND] Processing handoff request...`)
