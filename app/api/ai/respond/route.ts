@@ -152,6 +152,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ skipped: true, reason: 'no-messages' })
     }
 
+    // 6.5. MULTIMODAL: a IA "lê" imagem e "escuta" áudio do cliente.
+    // Para mensagens de mídia recebidas cujo conteúdo ainda é o placeholder
+    // ([image]/[audio]), baixa a mídia e usa o Gemini para transcrever/descrever;
+    // o texto vira o conteúdo que a IA lê. Cache no Redis (7d) por media_id.
+    for (const m of messages) {
+      if (m.direction !== 'inbound' || !m.media_url) continue
+      const kind = m.message_type === 'audio' ? 'audio' : m.message_type === 'image' ? 'image' : null
+      if (!kind) continue
+      const raw = (m.content || '').trim()
+      if (raw !== '[image]' && raw !== '[audio]') continue // já tem legenda/texto ou não é mídia crua
+      try {
+        const cacheKey = `media:understood:${m.media_url}`
+        let understood = redis ? await redis.get<string>(cacheKey) : null
+        if (!understood) {
+          const { understandMedia } = await import('@/lib/ai/media-understanding')
+          understood = await understandMedia(m.media_url, kind)
+          if (understood && redis) await redis.setex(cacheKey, 60 * 60 * 24 * 7, understood)
+        }
+        if (understood) {
+          m.content = kind === 'audio' ? `[Áudio do cliente] ${understood}` : `[Imagem do cliente] ${understood}`
+          console.log(`🖼️ [AI-RESPOND] Mídia ${kind} entendida (${understood.length} chars)`)
+        }
+      } catch (e) {
+        console.error(`⚠️ [AI-RESPOND] Falha ao entender mídia ${m.message_type}:`, e)
+      }
+    }
+
     // 7. Busca dados do contato (se existir)
     let contactData: ContactContext | undefined
     if (conversation.contact_id) {
