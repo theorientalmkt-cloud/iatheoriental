@@ -13,6 +13,7 @@ import { Campaign, CampaignStatus } from '../../../types';
 import { DashboardStats } from '../../../services/dashboardService';
 import { AISummaryCard } from './AISummaryCard';
 import { BookingsSummaryCard } from './BookingsSummaryCard';
+import { CampaignConversionCard } from './CampaignConversionCard';
 
 interface DashboardViewProps {
   stats: DashboardStats;
@@ -127,6 +128,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentCampa
         <AISummaryCard />
         <BookingsSummaryCard />
       </div>
+
+      {/* Funil: campanhas -> reservas marcadas pela IA */}
+      <CampaignConversionCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Chart Section */}
