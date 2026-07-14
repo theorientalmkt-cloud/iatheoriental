@@ -269,6 +269,7 @@ async function persistAILog(data: {
   modelUsed: string
   failover?: boolean
   primaryModel?: string
+  primaryError?: string
 }): Promise<string | undefined> {
   try {
     const supabase = getSupabaseAdmin()
@@ -297,6 +298,7 @@ async function persistAILog(data: {
           // Observabilidade do failover: torna VISIVEL quando o primario falhou
           failover: data.failover ?? false,
           primaryModel: data.primaryModel || data.modelUsed,
+          primaryError: data.primaryError || null,
         },
       })
       .select('id')
@@ -463,6 +465,8 @@ export async function processChatAgent(
   let sources: Array<{ title: string; content: string }> | undefined
   // Rede de seguranca (nivel 3): marca se a IA REALMENTE consultou disponibilidade neste turno
   let calledCheckAvailability = false
+  // Erro do provedor PRIMARIO quando ocorre failover — gravado no log para nunca mais adivinhar
+  let primaryError: string | undefined
 
   // Data/hora atuais (America/Sao_Paulo) — sem isso a IA "chuta" datas (ex.: "dia 11" -> novembro).
   const TZ_SP = 'America/Sao_Paulo'
@@ -913,8 +917,11 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
               }))
             })
 
-            // Trata como erro do provider — agenda retry se ainda houver tentativas
-            lastProviderError = new Error(`Provider returned finishReason=error`)
+            // Trata como erro do provider — agenda retry se ainda houver tentativas.
+            // Inclui text/warnings para o log expor o motivo real (safety block, modelo etc.).
+            lastProviderError = new Error(
+              `finishReason=error | text=${(result.text || '').slice(0, 120)} | warnings=${JSON.stringify(result.warnings || []).slice(0, 250)}`
+            )
             if (providerAttempt < MAX_PROVIDER_RETRIES) {
               const backoff = PROVIDER_RETRY_BACKOFF_MS * Math.pow(2, providerAttempt)
               console.warn(`[chat-agent] ⏳ Provider error, retry ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES} in ${backoff}ms`)
@@ -925,6 +932,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             }
             // Esgotou tentativas neste provedor: tenta failover p/ o outro
             clearTimeout(timeoutId)
+            primaryError = lastProviderError instanceof Error ? lastProviderError.message : String(lastProviderError)
             if (await attemptProviderFailover()) { providerAttempt = 0; continue }
             // Sem failover disponível: propaga pro catch externo
             throw lastProviderError
@@ -973,6 +981,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
           }
 
           // Esgotou retries neste provedor: tenta failover p/ o outro provedor
+          primaryError = lastProviderError instanceof Error ? lastProviderError.message : String(lastProviderError)
           if (await attemptProviderFailover()) { providerAttempt = 0; continue }
 
           // Sem failover disponível: propaga pro catch externo (handoff)
@@ -1099,6 +1108,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       modelUsed: modelId,
       failover: failoverTried,
       primaryModel: primaryModelId,
+      primaryError,
     })
 
     // Save interaction to Mem0 (fire-and-forget, não bloqueia resposta)
@@ -1146,6 +1156,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
     modelUsed: modelId,
     failover: failoverTried,
     primaryModel: primaryModelId,
+    primaryError,
   })
 
   return {
