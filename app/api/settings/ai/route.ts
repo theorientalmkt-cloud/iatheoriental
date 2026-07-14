@@ -55,6 +55,61 @@ async function validateOpenAIKey(apiKey: string): Promise<ValidationResult> {
   }
 }
 
+// Lê uma chave de API já salva no banco (para validar o modelo quando o usuário
+// troca só o modelo, sem reenviar a chave).
+async function getExistingKey(provider: 'google' | 'openai'): Promise<string | null> {
+  const keyName = provider === 'google' ? 'google_api_key' : 'openai_api_key'
+  const { data } =
+    (await supabase.admin?.from('settings').select('value').eq('key', keyName).single()) || {
+      data: null,
+    }
+  return (data?.value as string) || null
+}
+
+// Valida que o MODELO realmente gera conteúdo — não só que a chave é válida.
+// Faz uma chamada mínima (1 token). Evita salvar um modelo que a API do provedor
+// LISTA mas que falha em generateContent (ex.: gemini-2.5-flash-lite), o que
+// jogaria todo o atendimento no failover lento sem ninguém perceber.
+async function validateModel(
+  provider: 'google' | 'openai',
+  model: string,
+  apiKey: string
+): Promise<ValidationResult> {
+  try {
+    const { generateText } = await import('ai')
+    let instance
+    if (provider === 'google') {
+      const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
+      instance = createGoogleGenerativeAI({ apiKey })(model)
+    } else {
+      const { createOpenAI } = await import('@ai-sdk/openai')
+      instance = createOpenAI({ apiKey })(model)
+    }
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+    try {
+      const res = await generateText({
+        model: instance,
+        prompt: 'Responda apenas: ok',
+        maxOutputTokens: 8,
+        abortSignal: controller.signal,
+      })
+      if (res.finishReason === 'error') {
+        return { valid: false, error: `O modelo "${model}" não conseguiu responder. Escolha outro modelo.` }
+      }
+      return { valid: true }
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    return {
+      valid: false,
+      error: `O modelo "${model}" não funcionou (${message.slice(0, 140)}). Escolha outro modelo da lista.`,
+    }
+  }
+}
+
 function parseJsonSetting<T>(value: unknown, fallback: T): T {
   if (value === null || value === undefined || value === '') return fallback
   // Se Supabase já desserializou (coluna jsonb), retorna direto sem JSON.parse.
@@ -179,6 +234,28 @@ export async function POST(request: NextRequest) {
         provider: provider ?? current.provider,
         model: model ?? current.model,
       })
+
+      // ESTABILIDADE: valida que o modelo REALMENTE funciona antes de ativar.
+      // Sem isso, dá pra salvar um modelo que a API lista mas que não gera resposta
+      // (ex.: gemini-2.5-flash-lite) — e o atendimento cai no failover lento.
+      const apiKey =
+        (normalized.provider === 'google' ? google_api_key : openai_api_key) ||
+        (await getExistingKey(normalized.provider))
+      if (!apiKey) {
+        return NextResponse.json(
+          {
+            error: `Configure a chave do ${
+              normalized.provider === 'google' ? 'Google' : 'OpenAI'
+            } antes de escolher o modelo.`,
+          },
+          { status: 400 }
+        )
+      }
+      const modelCheck = await validateModel(normalized.provider, normalized.model, apiKey)
+      if (!modelCheck.valid) {
+        return NextResponse.json({ error: modelCheck.error }, { status: 400 })
+      }
+
       updates.push({ key: 'ai_direct', value: JSON.stringify(normalized), updated_at: now })
     }
 
