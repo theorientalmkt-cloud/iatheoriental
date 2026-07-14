@@ -8,7 +8,7 @@
  * - Jantar Omakase Nippon: Ter–Sáb, 19:00 ou 21:00
  * - Almoço Omakase XP: Qui–Dom, 13:00
  * - Capacidade: 9 lugares por turno (3 deles no deck/janela, únicos que aceitam pet)
- * - Antecedência mínima: 4 horas
+ * - Antecedência mínima: 2 horas
  */
 
 import { getSupabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
@@ -18,7 +18,7 @@ import { addDays } from 'date-fns'
 const TZ = 'America/Sao_Paulo'
 const CAPACITY_TOTAL = 9
 const DECK_CAPACITY = 3
-const MIN_ADVANCE_HOURS = 4
+const MIN_ADVANCE_HOURS = 2
 const CANCELLED = new Set(['cancelado', 'no_show'])
 
 const WD_LABEL: Record<number, string> = {
