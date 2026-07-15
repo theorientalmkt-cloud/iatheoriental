@@ -1151,8 +1151,13 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
   // Handoff só acontece quando o LLM decide explicitamente (shouldHandoff=true em response)
   // ou quando o operador transfere manualmente. Erros transitórios pedem retry do usuário,
   // não escalonamento — evita inchar a fila humana por hiccup técnico.
+  // Se a reserva JÁ foi confirmada neste turno (confirmBooking deu certo) mas a IA
+  // falhou ao gerar o texto final, NÃO mande o erro genérico — mande a confirmação.
+  // Evita a contradição "problema técnico" + link de pagamento da reserva criada.
   const fallbackResponse: SupportResponse = {
-    message: 'Tive um problema técnico momentâneo. Pode repetir sua última mensagem, por favor?',
+    message: reservationConfirmed
+      ? 'Pronto! Sua solicitação de reserva foi registrada com sucesso. Nossa equipe entrará em contato pelo seu WhatsApp em breve para finalizar os detalhes. Agradecemos o interesse e até logo!'
+      : 'Tive um problema técnico momentâneo. Pode repetir sua última mensagem, por favor?',
     sentiment: 'neutral',
     confidence: 0,
     sources: null,
