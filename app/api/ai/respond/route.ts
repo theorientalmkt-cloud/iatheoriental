@@ -257,7 +257,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Split por \n\n (igual Evolution API) - cada parágrafo vira uma mensagem
-    const messageParts = splitMessageByParagraphs(result.response.message)
+    const messageParts = splitMessageByParagraphs(dedupeMessage(result.response.message))
     console.log(`📤 [AI-RESPOND] Message split into ${messageParts.length} parts`)
 
     const messageIds: string[] = []
@@ -550,4 +550,39 @@ function splitMessageByParagraphs(message: string): string[] {
     .split('\n\n')
     .map(part => part.trim())
     .filter(part => part.length > 0)
+}
+
+/**
+ * Remove repetições que a IA às vezes gera (ex.: lista de disponibilidade 2x):
+ *  1) blocos (parágrafos) exatamente duplicados
+ *  2) linhas de disponibilidade duplicadas (ex.: "Jantar 19h - 9 vagas")
+ * Determinístico — garante que o cliente nunca receba a mesma coisa repetida.
+ */
+function dedupeMessage(message: string): string {
+  // 1) Parágrafos duplicados
+  const blocks = message.split(/\n{2,}/)
+  const seenBlocks = new Set<string>()
+  const keptBlocks: string[] = []
+  for (const b of blocks) {
+    const key = b.trim().toLowerCase().replace(/\s+/g, ' ')
+    if (key && seenBlocks.has(key)) continue
+    if (key) seenBlocks.add(key)
+    keptBlocks.push(b)
+  }
+
+  // 2) Linhas de disponibilidade duplicadas
+  const lines = keptBlocks.join('\n\n').split('\n')
+  const seenAvail = new Set<string>()
+  const keptLines: string[] = []
+  for (const line of lines) {
+    const isAvail = /\b(almo[çc]o(\s+xp)?|jantar)\b[^\n]*\b\d+\s*vagas?\b|\blotad/i.test(line)
+    if (isAvail) {
+      const key = line.trim().toLowerCase().replace(/\s+/g, ' ')
+      if (seenAvail.has(key)) continue
+      seenAvail.add(key)
+    }
+    keptLines.push(line)
+  }
+
+  return keptLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
