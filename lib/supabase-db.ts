@@ -497,27 +497,42 @@ export const campaignDb = {
 
 export const contactDb = {
     getAll: async (): Promise<Contact[]> => {
-        const { data, error } = await supabase
-            .from('contacts')
-            .select('*')
-            .order('created_at', { ascending: false })
+        // Pagina em lotes de 1000 para trazer TODOS os contatos. Sem isso, o
+        // Supabase limita a query a 1000 linhas — com mais que isso, a campanha
+        // "perdia" contatos e tags (ex.: "Reenvio 03" em contatos mais antigos)
+        // e só alcançaria os 1000 primeiros.
+        const PAGE = 1000
+        const out: Contact[] = []
+        for (let from = 0; ; from += PAGE) {
+            const { data, error } = await supabase
+                .from('contacts')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .range(from, from + PAGE - 1)
 
-        if (error) throw error
+            if (error) throw error
+            const batch = data || []
 
-        return (data || []).map(row => ({
-            id: row.id,
-            name: row.name,
-            phone: row.phone,
-            email: row.email,
-            status: (row.status as ContactStatus) || ContactStatus.OPT_IN,
-            tags: row.tags || [],
-            lastActive: row.updated_at
-                ? new Date(row.updated_at).toLocaleDateString()
-                : (row.created_at ? new Date(row.created_at).toLocaleDateString() : '-'),
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            custom_fields: row.custom_fields,
-        }))
+            for (const row of batch) {
+                out.push({
+                    id: row.id,
+                    name: row.name,
+                    phone: row.phone,
+                    email: row.email,
+                    status: (row.status as ContactStatus) || ContactStatus.OPT_IN,
+                    tags: row.tags || [],
+                    lastActive: row.updated_at
+                        ? new Date(row.updated_at).toLocaleDateString()
+                        : (row.created_at ? new Date(row.created_at).toLocaleDateString() : '-'),
+                    createdAt: row.created_at,
+                    updatedAt: row.updated_at,
+                    custom_fields: row.custom_fields,
+                })
+            }
+
+            if (batch.length < PAGE) break
+        }
+        return out
     },
 
     list: async (params: {
