@@ -158,10 +158,14 @@ export async function POST(req: NextRequest) {
     // o texto vira o conteúdo que a IA lê. Cache no Redis (7d) por media_id.
     for (const m of messages) {
       if (m.direction !== 'inbound' || !m.media_url) continue
-      const kind = m.message_type === 'audio' ? 'audio' : m.message_type === 'image' ? 'image' : null
+      const kind =
+        m.message_type === 'audio' ? 'audio'
+        : m.message_type === 'image' ? 'image'
+        : m.message_type === 'document' ? 'document'
+        : null
       if (!kind) continue
       const raw = (m.content || '').trim()
-      if (raw !== '[image]' && raw !== '[audio]') continue // já tem legenda/texto ou não é mídia crua
+      if (raw !== '[image]' && raw !== '[audio]' && raw !== '[document]') continue // já tem legenda/texto ou não é mídia crua
       try {
         const cacheKey = `media:understood:${m.media_url}`
         let understood = redis ? await redis.get<string>(cacheKey) : null
@@ -171,7 +175,10 @@ export async function POST(req: NextRequest) {
           if (understood && redis) await redis.setex(cacheKey, 60 * 60 * 24 * 7, understood)
         }
         if (understood) {
-          m.content = kind === 'audio' ? `[Áudio do cliente] ${understood}` : `[Imagem do cliente] ${understood}`
+          m.content =
+            kind === 'audio' ? `[Áudio do cliente] ${understood}`
+            : kind === 'document' ? `[Documento do cliente] ${understood}`
+            : `[Imagem do cliente] ${understood}`
           console.log(`🖼️ [AI-RESPOND] Mídia ${kind} entendida (${understood.length} chars)`)
         }
       } catch (e) {

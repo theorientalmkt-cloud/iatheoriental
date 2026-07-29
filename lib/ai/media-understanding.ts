@@ -12,7 +12,7 @@
 import { getWhatsAppCredentials } from '@/lib/whatsapp-credentials'
 import { getAiDirectConfig } from '@/lib/ai/ai-center-config'
 
-export type MediaKind = 'image' | 'audio'
+export type MediaKind = 'image' | 'audio' | 'document'
 
 /** Baixa os bytes de uma mídia da Meta a partir do media_id. */
 async function downloadMetaMedia(
@@ -55,6 +55,8 @@ const PROMPTS: Record<MediaKind, string> = {
     'Transcreva este áudio para texto em português brasileiro. Retorne APENAS a transcrição literal do que foi dito, sem comentários, sem aspas e sem rótulos.',
   image:
     'Esta imagem foi enviada por um cliente de um restaurante no WhatsApp. Extraia TODO o texto visível e descreva de forma objetiva o que é (ex.: endereço, comprovante de pagamento, print de conversa, foto, cardápio). Responda em português brasileiro, curto e direto, apenas com o conteúdo útil.',
+  document:
+    'Este arquivo/documento foi enviado por um cliente de um restaurante no WhatsApp. Extraia o texto e resuma de forma objetiva o conteúdo relevante (ex.: comprovante de pagamento, lista de convidados, contrato, cardápio, cupom). Responda em português brasileiro, curto e direto, apenas com o conteúdo útil.',
 }
 
 /**
