@@ -74,9 +74,12 @@ export const useCampaignWizardController = () => {
     queryKey: ['contacts'],
     queryFn: contactService.getAll,
     enabled: step >= 2,
-    staleTime: 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    // Sempre busca contatos frescos ao abrir a montagem e ao voltar pra aba —
+    // senão tags/segmentos (ex.: "Reenvio 03") ficam desatualizados quando os
+    // leads são editados em outra tela.
+    staleTime: 30 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     refetchOnReconnect: false,
   });
 
