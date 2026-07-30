@@ -358,9 +358,11 @@ export const useCampaignNewController = () => {
     return () => controller.abort()
   }, [testContactQuery.data?.phone])
 
-  // Busca contagens de contatos por tag - só roda quando tagsQuery tem dados (step >= 2)
+  // Busca contagens de contatos por tag - só roda quando tagsQuery tem dados (step >= 2).
+  // Sem corte: precisa cobrir TODAS as tags, senão as que ficam no fim da ordem
+  // (ex.: "Reenvio 03", 7ª no alfabeto) ficam sem contagem e somem da montagem.
   useEffect(() => {
-    const tags = (tagsQuery.data || []).slice(0, 6)
+    const tags = (tagsQuery.data || [])
     if (!tags.length) return
     let cancelled = false
     Promise.all(
@@ -1298,7 +1300,10 @@ export const useCampaignNewController = () => {
     : 'Nenhum filtro selecionado'
   const countryData = countriesQuery.data?.data || []
   const stateData = statesQuery.data?.data || []
-  const tagChips = (tagsQuery.data || []).slice(0, 6)
+  // Mostra TODAS as tags (paridade com a tela de Contatos). Antes cortava em 6
+  // (.slice(0, 6)) e, como a RPC devolve em ordem alfabética, "Reenvio 03" (7ª)
+  // nunca aparecia aqui apesar de existir em Contatos.
+  const tagChips = (tagsQuery.data || [])
   const countryChips = countryData.map((item) => item.code)
   const stateChips = stateData.map((item) => item.code)
   const countryCounts = useMemo(() => {
