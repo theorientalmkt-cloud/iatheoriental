@@ -16,6 +16,7 @@ import {
     Sparkles,
     Workflow,
     CalendarDays,
+    BellRing,
 } from 'lucide-react'
 import React from 'react'
 import { HealthStatus } from '@/lib/health-check'
@@ -339,6 +340,7 @@ export function DashboardShell({
     const navItems = useMemo(() => [
         { path: '/', label: 'Dashboard', icon: LayoutDashboard },
         { path: '/campaigns', label: 'Campanhas', icon: MessageSquare },
+        { path: '/reengagement', label: 'Reengajamento', icon: BellRing },
         { path: '/inbox', label: 'Inbox', icon: MessageCircle }, // Badge dinâmico renderizado no DashboardSidebar
         { path: '/workflows', label: 'Workflow', icon: Workflow, badge: 'beta', disabled: true, hidden: !isDevMode },
         { path: '/conversations', label: 'Conversas', icon: MessageCircle, hidden: true },
@@ -352,6 +354,7 @@ export function DashboardShell({
     const getPageTitle = (path: string) => {
         if (path === '/') return 'Dashboard'
         if (path === '/campaigns') return 'Campanhas'
+        if (path === '/reengagement') return 'Reengajamento'
         if (path.startsWith('/campaigns/new')) return 'Nova Campanha'
         if (path.startsWith('/campaigns/')) return 'Detalhes da Campanha'
         if (path === '/workflows') return 'Workflows'
