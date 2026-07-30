@@ -83,6 +83,22 @@ export const useCampaignWizardController = () => {
     refetchOnReconnect: false,
   });
 
+  // Tags autoritativas — MESMA fonte da tela de Contatos (RPC get_contact_tags),
+  // que lista TODAS as tags distintas, sem filtro de status/elegibilidade.
+  // Sem isto, a lista de tags da campanha vinha só de contatos elegíveis
+  // (calculateAudienceStats exclui opt-out/suprimidos), então uma tag cujos
+  // contatos são todos opt-out/suprimidos (ex.: "Reenvio 03") aparecia em
+  // Contatos mas sumia aqui.
+  const tagsQuery = useQuery({
+    queryKey: ['contactTags'],
+    queryFn: contactService.getTags,
+    enabled: step >= 2,
+    staleTime: 30 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: false,
+  });
+
   const templatesQuery = useQuery({
     queryKey: ['templates'],
     queryFn: templateService.getAll,
@@ -342,10 +358,41 @@ export const useCampaignWizardController = () => {
   const topTag = useMemo(() => findTopTag(allContacts), [allContacts]);
 
   // Use pure function from business logic
-  const audienceStats = useMemo(
-    () => calculateAudienceStats(allContacts, suppressedPhones, topTag),
-    [allContacts, suppressedPhones, topTag]
-  );
+  const audienceStats = useMemo(() => {
+    const base = calculateAudienceStats(allContacts, suppressedPhones, topTag);
+    const allTags = tagsQuery.data || [];
+    if (!allTags.length) return base;
+
+    // Paridade com a tela de Contatos: garante que TODA tag existente apareça na
+    // campanha, anexando a contagem de ELEGÍVEIS já calculada (0 quando nenhum
+    // contato elegível tem a tag — ex.: contatos todos opt-out/suprimidos).
+    const eligibleByKey = new Map(
+      base.tagCountsEligible.map((t) => [t.tag.trim().toLowerCase(), t])
+    );
+    const merged: typeof base.tagCountsEligible = [];
+    const seen = new Set<string>();
+
+    for (const raw of allTags) {
+      const label = String(raw ?? '').trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(eligibleByKey.get(key) ?? { tag: label, count: 0 });
+    }
+    // Rede de segurança: preserva qualquer tag elegível que não veio da RPC.
+    for (const t of base.tagCountsEligible) {
+      const key = t.tag.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(t);
+      }
+    }
+    // Mesma ordenação da função pura: contagem desc, depois nome asc.
+    merged.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+
+    return { ...base, tagCountsEligible: merged };
+  }, [allContacts, suppressedPhones, topTag, tagsQuery.data]);
 
   // Use pure function from business logic for criteria filtering
   // Uses batch action to update all audience state in one dispatch (reduces re-renders)
