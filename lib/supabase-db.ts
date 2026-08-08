@@ -1043,30 +1043,45 @@ export const contactDb = {
     ): Promise<number> => {
         if (ids.length === 0) return 0
 
-        const { data, error } = await supabase
+        // Caminho principal: RPC bulk_update_contact_tags (UPDATE puro no SQL, com
+        // merge + sanitização). Evita o bug do upsert PARCIAL: contacts.phone é
+        // NOT NULL sem default, então um upsert sem `phone` viola a constraint e
+        // estoura 500 ao marcar tags.
+        const { data, error } = await supabase.rpc('bulk_update_contact_tags', {
+            p_ids: ids,
+            p_tags_to_add: tagsToAdd,
+            p_tags_to_remove: tagsToRemove,
+        })
+
+        if (!error) return typeof data === 'number' ? data : ids.length
+
+        // Fallback (RPC ausente no banco): UPDATE por contato — nunca upsert —
+        // para não esbarrar no NOT NULL de colunas não enviadas.
+        const isRpcMissing =
+            (error as { code?: string })?.code === '42883' ||
+            (error as { message?: string })?.message?.includes('Could not find the function') === true
+        if (!isRpcMissing) throw error
+
+        const { data: rowsData, error: selErr } = await supabase
             .from('contacts')
             .select('id, tags')
             .in('id', ids)
-
-        if (error) throw error
+        if (selErr) throw selErr
 
         const now = new Date().toISOString()
-        const rows = (data || []).map((row: any) => {
-            const existing: string[] = Array.isArray(row.tags) ? row.tags : []
+        let updated = 0
+        for (const row of (rowsData || []) as Array<{ id: string; tags: unknown }>) {
+            const existing: string[] = Array.isArray(row.tags) ? (row.tags as string[]) : []
             const merged = Array.from(new Set([...existing, ...tagsToAdd]))
                 .filter((t) => !tagsToRemove.includes(t))
-            return { id: row.id, tags: merged, updated_at: now }
-        })
-
-        if (rows.length === 0) return 0
-
-        const { error: upsertError } = await supabase
-            .from('contacts')
-            .upsert(rows as any, { onConflict: 'id' })
-
-        if (upsertError) throw upsertError
-
-        return rows.length
+            const { error: upErr } = await supabase
+                .from('contacts')
+                .update({ tags: merged, updated_at: now })
+                .eq('id', row.id)
+            if (upErr) throw upErr
+            updated += 1
+        }
+        return updated
     },
 
     bulkUpdateStatus: async (ids: string[], status: string): Promise<number> => {
