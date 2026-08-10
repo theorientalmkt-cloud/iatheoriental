@@ -84,3 +84,28 @@ export function daysUntil(validoAte: string, todayYmd: string): number | null {
   const b = Date.UTC(+todayYmd.slice(0, 4), +todayYmd.slice(5, 7) - 1, +todayYmd.slice(8, 10))
   return Math.round((a - b) / 86_400_000)
 }
+
+/**
+ * Bloco de contexto do MENU VIGENTE que é injetado no system prompt da IA.
+ * Função PURA (testável): a data vai VERBATIM, então a IA não computa/adivinha
+ * a data — apenas repete. Retorna null quando não há vigência (não injeta nada).
+ */
+export function buildMenuContextBlock(menu: MenuInfo, todayYmd: string): string | null {
+  if (!menu.validoAte) return null
+  const dias = daysUntil(menu.validoAte, todayYmd)
+  let urg = ''
+  if (dias !== null) {
+    if (dias < 0)
+      urg = ` (este menu VENCEU em ${menu.validoAte} — avise com elegância que o menu mudou e ofereça confirmar o atual com a equipe; NÃO ofereça o menu vencido)`
+    else if (dias === 0)
+      urg = ` (ÚLTIMO DIA — válido só até HOJE; crie urgência real e sofisticada, sem exagero)`
+    else if (dias <= 3)
+      urg = ` (faltam só ${dias} dia(s) — reforce a urgência com elegância)`
+    else urg = ` (faltam ${dias} dias)`
+  }
+  return (
+    `\n\n## MENU VIGENTE (oficial — use SEMPRE esta data, nunca invente)\n` +
+    `Menu atual: ${menu.nome || 'menu da casa'} — válido até ${menu.validoAte}${urg}.` +
+    (menu.nota ? `\nObservação: ${menu.nota}` : '')
+  )
+}
