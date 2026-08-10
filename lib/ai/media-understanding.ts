@@ -14,9 +14,23 @@ import { getAiDirectConfig } from '@/lib/ai/ai-center-config'
 
 export type MediaKind = 'image' | 'audio' | 'document'
 
-/** Baixa os bytes de uma mídia da Meta a partir do media_id. */
+// Teto de bytes por tipo (defesa contra DoS/custo — a Meta aceita doc até 100MB).
+const MAX_BYTES: Record<MediaKind, number> = {
+  image: 5 * 1024 * 1024,
+  audio: 16 * 1024 * 1024,
+  document: 10 * 1024 * 1024,
+}
+// Allowlist de mimetypes por tipo — rejeita o resto.
+const ALLOWED_MIME: Record<MediaKind, RegExp> = {
+  image: /^image\/(jpe?g|png|webp|gif)$/i,
+  audio: /^audio\/(ogg|mpeg|mp3|mp4|amr|aac|x-m4a|webm)$/i,
+  document: /^application\/pdf$/i,
+}
+
+/** Baixa os bytes de uma mídia da Meta a partir do media_id (respeitando o teto). */
 async function downloadMetaMedia(
-  mediaId: string
+  mediaId: string,
+  maxBytes: number
 ): Promise<{ data: Buffer; mimeType: string } | null> {
   const credentials = await getWhatsAppCredentials()
   if (!credentials?.accessToken) return null
@@ -44,10 +58,22 @@ async function downloadMetaMedia(
     console.error(`[media-understanding] Meta download error: HTTP ${fileRes.status}`)
     return null
   }
+  // Aborta cedo se o Content-Length já ultrapassa o teto (evita baixar 100MB).
+  const declared = Number(fileRes.headers.get('content-length') || 0)
+  if (declared && declared > maxBytes) {
+    console.warn(`[media-understanding] mídia excede o teto (${declared} > ${maxBytes} bytes) — ignorada`)
+    return null
+  }
   const mimeType = (info.mime_type || fileRes.headers.get('content-type') || 'application/octet-stream')
     .split(';')[0]
     .trim()
-  return { data: Buffer.from(await fileRes.arrayBuffer()), mimeType }
+  const buf = Buffer.from(await fileRes.arrayBuffer())
+  // Rede de segurança: alguns CDNs não mandam Content-Length.
+  if (buf.byteLength > maxBytes) {
+    console.warn(`[media-understanding] mídia excede o teto após download (${buf.byteLength} > ${maxBytes} bytes) — ignorada`)
+    return null
+  }
+  return { data: buf, mimeType }
 }
 
 const PROMPTS: Record<MediaKind, string> = {
@@ -74,8 +100,14 @@ export async function understandMedia(mediaId: string, kind: MediaKind): Promise
     }
     const modelId = cfg.provider === 'google' && cfg.model ? cfg.model : 'gemini-flash-latest'
 
-    const media = await downloadMetaMedia(mediaId)
+    const media = await downloadMetaMedia(mediaId, MAX_BYTES[kind])
     if (!media) return ''
+
+    // Só processa tipos esperados para cada modalidade.
+    if (!ALLOWED_MIME[kind].test(media.mimeType)) {
+      console.warn(`[media-understanding] tipo não permitido para ${kind}: ${media.mimeType} — ignorado`)
+      return ''
+    }
 
     const { generateText } = await import('ai')
     const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
@@ -93,6 +125,8 @@ export async function understandMedia(mediaId: string, kind: MediaKind): Promise
         },
       ],
       maxOutputTokens: 700,
+      // Timeout próprio — diferente do agente principal, essa chamada não tinha.
+      abortSignal: AbortSignal.timeout(15000),
     })
     return (text || '').trim()
   } catch (e) {
