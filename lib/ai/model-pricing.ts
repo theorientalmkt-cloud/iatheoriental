@@ -34,8 +34,12 @@ export function priceFor(modelId: string): ModelPrice | null {
   const id = String(modelId || '').toLowerCase().trim()
   if (!id) return null
   if (PRICES[id]) return PRICES[id]
-  // Match por prefixo de versão (ex.: "gemini-2.5-flash-preview-XX")
-  const prefixed = Object.keys(PRICES).find((k) => id.startsWith(k))
+  // Match por prefixo, do MAIS específico p/ o menos (ordena por comprimento
+  // desc): senão "gemini-2.5-flash-lite-preview" casaria "gemini-2.5-flash"
+  // e superfaturaria (0,30/2,50 em vez de 0,10/0,40).
+  const prefixed = Object.keys(PRICES)
+    .sort((a, b) => b.length - a.length)
+    .find((k) => id.startsWith(k))
   if (prefixed) return PRICES[prefixed]
   // Aliases genéricos (ex.: "gemini-flash-latest", "gemini-flash-lite-latest")
   if (id.includes('flash-lite')) return PRICES['gemini-2.5-flash-lite']

@@ -983,9 +983,11 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             ...(providerOptions ? { providerOptions } : {}),
           })
 
-          // Captura o uso de tokens (para o painel de custo). Sobrescreve a cada
+          // Captura o uso de tokens (para o painel de custo). Usa totalUsage
+          // (soma de TODOS os steps: busca + resposta...), não result.usage, que
+          // é só o ÚLTIMO step e subestimaria o input. Sobrescreve a cada
           // tentativa; a geração final (bem-sucedida) prevalece.
-          if (result.usage) lastUsage = result.usage
+          if (result.totalUsage) lastUsage = result.totalUsage
 
           // Detecta erro sinalizado pelo provider no próprio resultado
           if (result.finishReason === 'error') {
