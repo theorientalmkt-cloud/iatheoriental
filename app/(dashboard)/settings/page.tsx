@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useSettingsController } from '@/hooks/useSettings'
 import { SettingsView } from '@/components/features/settings/SettingsView'
 import { StoreInfoCard } from '@/components/features/settings/StoreInfoCard'
+import { MenuInfoCard } from '@/components/features/settings/MenuInfoCard'
 import { SetupWizardView } from '@/components/features/settings/SetupWizardView'
 import { UsagePanel } from '@/components/UsagePanel'
 import { useUsage } from '@/hooks/useUsage'
@@ -48,6 +49,7 @@ export default function SettingsPage() {
         {/* Settings Main Content */}
         <div className="flex-1 min-w-0 xl:max-w-3xl">
           <StoreInfoCard />
+          <MenuInfoCard />
           <SettingsView
             settings={controller.settings}
             setSettings={controller.setSettings}
