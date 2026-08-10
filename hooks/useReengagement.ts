@@ -40,7 +40,9 @@ export function useReengagement() {
   useEffect(() => {
     if (!selectedCampaign) return
     const base = selectedCampaign.name.replace(/^campanha\s+/i, '').trim() || selectedCampaign.name
-    setTagName(`Não respondeu · ${base}`)
+    // Separador "-" (não "·"): o filtro de tags da montagem de campanha só aceita
+    // letras/números/espaço/hífen; "·" era descartado e a contagem vinha errada.
+    setTagName(`Não respondeu - ${base}`)
   }, [selectedCampaign])
 
   const nonRespondersQuery = useQuery({

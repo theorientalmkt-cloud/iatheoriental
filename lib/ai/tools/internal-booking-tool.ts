@@ -207,7 +207,12 @@ export async function confirmBooking(params: {
   const supabase = getSupabaseAdmin()
   if (!supabase) return { success: false, error: 'Sistema indisponível no momento.' }
 
-  const start = new Date(params.slotStart)
+  // A string SEM offset (o modelo manda "2026-06-27T19:00:00" naive) é hora de
+  // São Paulo. Sem isto, new Date() usa o fuso do HOST (Vercel = UTC) e a hora
+  // sai deslocada (19:00 -> 16:00), rejeitando turnos válidos. Se já vier com
+  // offset (-03:00/Z), respeita o offset. Coerente com o cálculo de disponibilidade.
+  const hasOffset = /([+-]\d\d:?\d\d|Z)$/.test(params.slotStart)
+  const start = hasOffset ? new Date(params.slotStart) : fromZonedTime(params.slotStart, TZ)
   if (Number.isNaN(start.getTime())) return { success: false, error: 'Data/hora inválida para o agendamento.' }
 
   const reservation_date = formatInTimeZone(start, TZ, 'yyyy-MM-dd')
