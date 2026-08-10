@@ -98,10 +98,20 @@ async function sendExternalWebhook(payload: Record<string, unknown>): Promise<vo
   }
 }
 
+let warnedMissingMetaSecret = false
+
 function verifyMetaWebhookSignature(input: { request: NextRequest; rawBody: string }): boolean {
   const appSecret = String(process.env.META_APP_SECRET || '').trim()
   // Compatibility mode: if not configured, do not block (but once configured, enforce).
-  if (!appSecret) return true
+  if (!appSecret) {
+    // Aviso ruidoso (uma vez por instância): sem o segredo, qualquer um pode
+    // injetar eventos falsos (mensagens/status/opt-outs). O fix é setar o segredo.
+    if (!warnedMissingMetaSecret) {
+      warnedMissingMetaSecret = true
+      console.error('[Webhook] ⚠️ SEGURANÇA: META_APP_SECRET não configurado — a assinatura do webhook da Meta NÃO é verificada. Configure META_APP_SECRET na Vercel para fechar essa porta.')
+    }
+    return true
+  }
 
   const header =
     input.request.headers.get('x-hub-signature-256') ||

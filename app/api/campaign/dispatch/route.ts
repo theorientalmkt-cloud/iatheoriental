@@ -177,14 +177,49 @@ export async function POST(request: NextRequest) {
   const bodyText = await request.text()
   const signature = request.headers.get('upstash-signature')
   const cookieHeader = request.headers.get('cookie') || ''
-  const hasSession = cookieHeader.includes('smartzap_session=')
 
-  // Auth: QStash requests têm signature header, requests manuais usam session ou API key
-  if (!signature && !hasSession) {
-    const authResult = await verifyApiKey(request)
-    if (!authResult.valid) {
-      return unauthorizedResponse(authResult.error)
+  // Auth robusta. ANTES bastava ter o header 'upstash-signature' (forjável) OU a
+  // substring do cookie — qualquer um disparava campanha. Ordem agora:
+  //   1) assinatura QStash VERIFICADA (quando as signing keys existem)
+  //   2) sessão do painel com TOKEN válido
+  //   3) API key
+  let authed = false
+
+  const qstashCurrent = process.env.QSTASH_CURRENT_SIGNING_KEY
+  const qstashNext = process.env.QSTASH_NEXT_SIGNING_KEY
+  if (signature && qstashCurrent && qstashNext) {
+    try {
+      const { Receiver } = await import('@upstash/qstash')
+      const receiver = new Receiver({ currentSigningKey: qstashCurrent, nextSigningKey: qstashNext })
+      authed = await receiver.verify({ signature, body: bodyText })
+    } catch (e) {
+      console.error('[campaign/dispatch] QStash signature inválida:', e instanceof Error ? e.message : e)
+      authed = false
     }
+  } else if (signature) {
+    // Signing keys ausentes: não dá para verificar. Mantém o comportamento atual
+    // (aceita) para NÃO quebrar o agendamento, mas avisa. Ação de segurança:
+    // definir QSTASH_CURRENT_SIGNING_KEY e QSTASH_NEXT_SIGNING_KEY na Vercel.
+    console.warn('[campaign/dispatch] ⚠️ QStash signing keys ausentes — assinatura NÃO verificada. Configure QSTASH_CURRENT_SIGNING_KEY/QSTASH_NEXT_SIGNING_KEY para fechar essa porta.')
+    authed = true
+  }
+
+  if (!authed) {
+    // Chamada manual do painel: valida o TOKEN de sessão (não só a presença).
+    const token = /(?:^|;\s*)smartzap_session=([^;]+)/.exec(cookieHeader)?.[1]
+    if (token) {
+      const { isValidSessionTokenEdge } = await import('@/lib/session-edge')
+      authed = await isValidSessionTokenEdge(decodeURIComponent(token))
+    }
+  }
+
+  if (!authed) {
+    const authResult = await verifyApiKey(request)
+    authed = authResult.valid
+  }
+
+  if (!authed) {
+    return unauthorizedResponse('Não autorizado')
   }
 
   const body = bodyText ? JSON.parse(bodyText) : {}

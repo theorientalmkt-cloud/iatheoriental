@@ -148,8 +148,14 @@ export async function proxy(request: NextRequest) {
 
         // Check for user session cookie (for browser API calls)
         if (sessionCookie?.value) {
-            // Session exists, allow request (validation happens in API route)
-            return NextResponse.next()
+            // Valida o TOKEN (não só a presença): antes, qualquer cookie forjado
+            // "smartzap_session=x" passava e acessava rotas com PII/credenciais.
+            // Fail-open em erro de infra (ver session-edge) para não trancar o dono.
+            const { isValidSessionTokenEdge } = await import('@/lib/session-edge')
+            if (await isValidSessionTokenEdge(sessionCookie.value)) {
+                return NextResponse.next()
+            }
+            // Token inválido: NÃO faz bypass — cai para a checagem de API key abaixo.
         }
 
         // All other API endpoints require at least API key
