@@ -100,7 +100,11 @@ export async function GET(request: NextRequest) {
       byDay.set(day, d)
     }
 
-    const custoDiaMedioUSD = days > 0 ? custoUSD / days : 0
+    // Média por dia com base nos dias que TÊM custo (evita subestimar logo após
+    // ligar a captura de tokens, quando dias antigos ainda têm custo 0).
+    const diasComCusto = Array.from(byDay.values()).filter((d) => d.custoUSD > 0).length
+    const baseDias = diasComCusto > 0 ? diasComCusto : days
+    const custoDiaMedioUSD = custoUSD / baseDias
     const projecaoMensalUSD = custoDiaMedioUSD * 30
 
     return NextResponse.json(

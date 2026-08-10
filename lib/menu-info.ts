@@ -26,11 +26,18 @@ export const DEFAULT_MENU_INFO: MenuInfo = {
   nota: '',
 }
 
+// Estado "sem vigência" — usado quando a leitura FALHA, para não injetar a data
+// hardcoded por cima de um valor real salvo (a IA simplesmente não menciona).
+const EMPTY_MENU_INFO: MenuInfo = { nome: '', validoAte: '', nota: '' }
+
 const KEY = 'menu_info'
 
-/** yyyy-mm-dd estrito. */
+/** yyyy-mm-dd estrito E data real de calendário (rejeita 2026-02-30, 2026-99-99). */
 function isYmd(v: unknown): v is string {
-  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const [y, m, d] = v.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
 }
 
 export async function getMenuInfo(): Promise<MenuInfo> {
@@ -44,7 +51,9 @@ export async function getMenuInfo(): Promise<MenuInfo> {
       nota: String(parsed.nota ?? DEFAULT_MENU_INFO.nota).trim(),
     }
   } catch {
-    return DEFAULT_MENU_INFO
+    // Erro transitório NÃO deve injetar a data hardcoded por cima de um valor
+    // real salvo — degrada para "sem vigência" (a IA não menciona o menu).
+    return EMPTY_MENU_INFO
   }
 }
 
