@@ -272,6 +272,7 @@ async function persistAILog(data: {
   failover?: boolean
   primaryModel?: string
   primaryError?: string
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedInputTokens?: number }
 }): Promise<string | undefined> {
   try {
     const supabase = getSupabaseAdmin()
@@ -288,7 +289,7 @@ async function persistAILog(data: {
         output_message: data.output?.message || null,
         response_time_ms: data.latencyMs,
         model_used: data.modelUsed,
-        tokens_used: null,
+        tokens_used: data.usage?.totalTokens ?? null,
         sources_used: data.output?.sources || null,
         error_message: data.error,
         metadata: {
@@ -301,6 +302,15 @@ async function persistAILog(data: {
           failover: data.failover ?? false,
           primaryModel: data.primaryModel || data.modelUsed,
           primaryError: data.primaryError || null,
+          // Uso de tokens (para o painel de custo da IA). Antes era descartado.
+          usage: data.usage
+            ? {
+                inputTokens: data.usage.inputTokens ?? null,
+                outputTokens: data.usage.outputTokens ?? null,
+                totalTokens: data.usage.totalTokens ?? null,
+                cachedInputTokens: data.usage.cachedInputTokens ?? null,
+              }
+            : null,
         },
       })
       .select('id')
@@ -479,6 +489,8 @@ export async function processChatAgent(
   // e o motivo — para corrigir o texto se a IA disser "confirmada" sem gravar.
   let bookingAttemptFailed = false
   let lastBookingError: string | undefined
+  // Uso de tokens da última geração — alimenta o painel de custo da IA (Google).
+  let lastUsage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedInputTokens?: number } | undefined
 
   // Data/hora atuais (America/Sao_Paulo) — sem isso a IA "chuta" datas (ex.: "dia 11" -> novembro).
   const TZ_SP = 'America/Sao_Paulo'
@@ -971,6 +983,10 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
             ...(providerOptions ? { providerOptions } : {}),
           })
 
+          // Captura o uso de tokens (para o painel de custo). Sobrescreve a cada
+          // tentativa; a geração final (bem-sucedida) prevalece.
+          if (result.usage) lastUsage = result.usage
+
           // Detecta erro sinalizado pelo provider no próprio resultado
           if (result.finishReason === 'error') {
             console.error(`[chat-agent] 🔴 PROVIDER ERROR DETAILS (attempt ${providerAttempt + 1}/${MAX_PROVIDER_RETRIES + 1}):`)
@@ -1209,6 +1225,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
       failover: failoverTried,
       primaryModel: primaryModelId,
       primaryError,
+      usage: lastUsage,
     })
 
     // Save interaction to Mem0 (fire-and-forget, não bloqueia resposta)
@@ -1262,6 +1279,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
     failover: failoverTried,
     primaryModel: primaryModelId,
     primaryError,
+    usage: lastUsage,
   })
 
   return {
