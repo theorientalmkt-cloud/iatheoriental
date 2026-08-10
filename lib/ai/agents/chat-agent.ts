@@ -520,6 +520,32 @@ export async function processChatAgent(
       // segue sem os dados da loja
     }
 
+    // Injeta o MENU VIGENTE — fonte FIXA no banco. A IA crava a data (nunca
+    // inventa) e cria urgência real nos últimos dias. Reusa nowYmdSP (fuso SP).
+    try {
+      const { getMenuInfo, daysUntil } = await import('@/lib/menu-info')
+      const menu = await getMenuInfo()
+      if (menu.validoAte) {
+        const dias = daysUntil(menu.validoAte, nowYmdSP)
+        let urg = ''
+        if (dias !== null) {
+          if (dias < 0)
+            urg = ` (este menu VENCEU em ${menu.validoAte} — avise com elegância que o menu mudou e ofereça confirmar o atual com a equipe; NÃO ofereça o menu vencido)`
+          else if (dias === 0)
+            urg = ` (ÚLTIMO DIA — válido só até HOJE; crie urgência real e sofisticada, sem exagero)`
+          else if (dias <= 3)
+            urg = ` (faltam só ${dias} dia(s) — reforce a urgência com elegância)`
+          else urg = ` (faltam ${dias} dias)`
+        }
+        systemPrompt +=
+          `\n\n## MENU VIGENTE (oficial — use SEMPRE esta data, nunca invente)\n` +
+          `Menu atual: ${menu.nome || 'menu da casa'} — válido até ${menu.validoAte}${urg}.` +
+          (menu.nota ? `\nObservação: ${menu.nota}` : '')
+      }
+    } catch {
+      // segue sem os dados do menu
+    }
+
     // Adiciona contexto do contato (nome, email). NAO injeta "Cliente desde":
     // a REGRA 1 do prompt proibe a IA de citar a data de cadastro do contato.
     const { contactData } = config
