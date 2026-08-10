@@ -535,25 +535,10 @@ export async function processChatAgent(
     // Injeta o MENU VIGENTE — fonte FIXA no banco. A IA crava a data (nunca
     // inventa) e cria urgência real nos últimos dias. Reusa nowYmdSP (fuso SP).
     try {
-      const { getMenuInfo, daysUntil } = await import('@/lib/menu-info')
+      const { getMenuInfo, buildMenuContextBlock } = await import('@/lib/menu-info')
       const menu = await getMenuInfo()
-      if (menu.validoAte) {
-        const dias = daysUntil(menu.validoAte, nowYmdSP)
-        let urg = ''
-        if (dias !== null) {
-          if (dias < 0)
-            urg = ` (este menu VENCEU em ${menu.validoAte} — avise com elegância que o menu mudou e ofereça confirmar o atual com a equipe; NÃO ofereça o menu vencido)`
-          else if (dias === 0)
-            urg = ` (ÚLTIMO DIA — válido só até HOJE; crie urgência real e sofisticada, sem exagero)`
-          else if (dias <= 3)
-            urg = ` (faltam só ${dias} dia(s) — reforce a urgência com elegância)`
-          else urg = ` (faltam ${dias} dias)`
-        }
-        systemPrompt +=
-          `\n\n## MENU VIGENTE (oficial — use SEMPRE esta data, nunca invente)\n` +
-          `Menu atual: ${menu.nome || 'menu da casa'} — válido até ${menu.validoAte}${urg}.` +
-          (menu.nota ? `\nObservação: ${menu.nota}` : '')
-      }
+      const menuBlock = buildMenuContextBlock(menu, nowYmdSP)
+      if (menuBlock) systemPrompt += menuBlock
     } catch {
       // segue sem os dados do menu
     }
@@ -985,9 +970,9 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
 
           // Captura o uso de tokens (para o painel de custo). Usa totalUsage
           // (soma de TODOS os steps: busca + resposta...), não result.usage, que
-          // é só o ÚLTIMO step e subestimaria o input. Sobrescreve a cada
-          // tentativa; a geração final (bem-sucedida) prevalece.
-          if (result.totalUsage) lastUsage = result.totalUsage
+          // é só o ÚLTIMO step e subestimaria o input. Cai para usage se algum
+          // provedor não popular totalUsage. Sobrescreve a cada tentativa.
+          if (result.totalUsage || result.usage) lastUsage = result.totalUsage ?? result.usage
 
           // Detecta erro sinalizado pelo provider no próprio resultado
           if (result.finishReason === 'error') {

@@ -131,11 +131,18 @@ export const AIUsageCard: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-1.5 text-[12px] text-[var(--ds-text-secondary)]">
-            <TrendingUp size={13} className="text-[var(--ds-text-muted)]" aria-hidden="true" />
-            Projeção do mês: <strong className="text-[var(--ds-text-primary)]">{brl(data.projecaoMensalBRL)}</strong>
-            <span className="text-[var(--ds-text-muted)]">(no ritmo atual)</span>
-          </div>
+          {data.tokensTotal === 0 && data.chamadas > 0 ? (
+            <div className="mt-3 rounded-lg bg-amber-500/10 ring-1 ring-amber-500/20 px-3 py-2 text-[12px] text-amber-300/90">
+              O registro de tokens <strong>começou agora</strong>. O custo aparece conforme as próximas
+              conversas acontecem — as {fmt(data.chamadas)} chamada(s) anteriores não têm tokens salvos.
+            </div>
+          ) : (
+            <div className="mt-3 flex items-center gap-1.5 text-[12px] text-[var(--ds-text-secondary)]">
+              <TrendingUp size={13} className="text-[var(--ds-text-muted)]" aria-hidden="true" />
+              Projeção do mês: <strong className="text-[var(--ds-text-primary)]">{brl(data.projecaoMensalBRL)}</strong>
+              <span className="text-[var(--ds-text-muted)]">(no ritmo atual)</span>
+            </div>
+          )}
 
           {data.porModelo.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
