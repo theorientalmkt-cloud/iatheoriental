@@ -532,6 +532,18 @@ export async function processChatAgent(
       // segue sem os dados da loja
     }
 
+    // Injeta MENUS, HORÁRIOS e TAXAS a partir do catálogo (lib/menus/catalog.ts),
+    // o mesmo módulo de onde o checkAvailability tira os turnos. Antes isso era
+    // texto escrito à mão no system_prompt e divergia da ferramenta — o prompt
+    // chegava a mandar a IA ignorar o retorno do checkAvailability. Gerado daqui,
+    // o que a IA lê e o que a ferramenta oferece não têm como discordar.
+    try {
+      const { buildMenuRulesBlock } = await import('@/lib/menus/catalog')
+      systemPrompt += `\n\n${buildMenuRulesBlock()}`
+    } catch {
+      // segue sem o bloco de menus
+    }
+
     // Injeta o MENU VIGENTE — fonte FIXA no banco. A IA crava a data (nunca
     // inventa) e cria urgência real nos últimos dias. Reusa nowYmdSP (fuso SP).
     try {

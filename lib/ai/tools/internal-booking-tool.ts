@@ -4,28 +4,31 @@
  * Kizuma: checkAvailability conta as reservas internas por dia/turno e calcula
  * vagas; confirmBooking insere a reserva (status pendente, source whatsapp_ia).
  *
- * Regras da casa (The Oriental Sushiya):
- * - Jantar Omakase Nippon: Ter–Sáb, 19:00 ou 21:00
- * - Almoço Omakase XP: Qui–Dom, 13:00
- * - Capacidade: 9 lugares por turno (3 deles no deck/janela, únicos que aceitam pet)
- * - Antecedência mínima: 2 horas
+ * As regras da casa (menus, turnos, capacidade) vêm de `lib/menus/catalog.ts`,
+ * fonte única — este módulo não as redefine.
  */
 
 import { getSupabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { addDays } from 'date-fns'
+import {
+  CAPACITY_TOTAL,
+  DECK_CAPACITY,
+  MIN_ADVANCE_HOURS,
+  TIMEZONE,
+  turnosForWeekday,
+  isTurnoValido,
+  MENUS,
+} from '@/lib/menus/catalog'
 
-const TZ = 'America/Sao_Paulo'
-const CAPACITY_TOTAL = 9
-const DECK_CAPACITY = 3
-const MIN_ADVANCE_HOURS = 2
+const TZ = TIMEZONE
 const CANCELLED = new Set(['cancelado', 'no_show'])
 
 const WD_LABEL: Record<number, string> = {
   0: 'Domingo', 1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta', 6: 'Sábado',
 }
 
-interface Turno { time: string; menu: 'Nippon' | 'XP'; label: string }
+interface Turno { time: string; menu: string; label: string }
 interface TurnoVagas extends Turno { vagas: number; deckVagas: number }
 
 export type TextBookingPrerequisites = {
@@ -37,21 +40,6 @@ export type TextBookingPrerequisites = {
 // =============================================================================
 // HELPERS
 // =============================================================================
-
-/** Turnos válidos para um dia da semana (0=Dom..6=Sáb). */
-function turnosForWeekday(wd: number): Turno[] {
-  const out: Turno[] = []
-  // Almoço XP: Qui(4), Sex(5), Sáb(6), Dom(0) — sempre 13:00
-  if (wd === 4 || wd === 5 || wd === 6 || wd === 0) {
-    out.push({ time: '13:00', menu: 'XP', label: 'Almoço XP 13h' })
-  }
-  // Jantar Nippon: Ter(2)–Sáb(6) — 19:00 ou 21:00
-  if (wd >= 2 && wd <= 6) {
-    out.push({ time: '19:00', menu: 'Nippon', label: 'Jantar 19h' })
-    out.push({ time: '21:00', menu: 'Nippon', label: 'Jantar 21h' })
-  }
-  return out
-}
 
 function normalizeTime(raw: unknown): string {
   const s = String(raw ?? '').trim()
@@ -71,7 +59,7 @@ function ddmm(dateStr: string): string {
 /** Um turno (data + horario) so e valido se existir na grade da casa
  * (XP 13h Qui-Dom; Nippon 19h/21h Ter-Sab). */
 function isValidSlot(dateStr: string, time: string): boolean {
-  return turnosForWeekday(weekdayOf(dateStr)).some((t) => t.time === time)
+  return isTurnoValido(weekdayOf(dateStr), time)
 }
 
 // =============================================================================
@@ -233,9 +221,13 @@ export async function confirmBooking(params: {
   // Valida o turno: so 13h (XP, Qui-Dom) ou 19h/21h (Nippon, Ter-Sab).
   // Bloqueia horarios invalidos (ex.: 18h) mesmo que o LLM tente criar.
   if (!isValidSlot(reservation_date, reservation_time)) {
+    const validos = turnosForWeekday(weekdayOf(reservation_date))
+    const lista = validos.length
+      ? validos.map((t) => t.label).join(', ')
+      : 'nenhum (a casa não abre neste dia)'
     return {
       success: false,
-      error: 'Horario invalido para reserva. Os turnos validos sao: Almoco Omakase XP as 13h (quinta a domingo) e Jantar Omakase Nippon as 19h ou 21h (terca a sabado). Ofereca um desses ao cliente.',
+      error: `Horário inválido para reserva. Turnos válidos em ${reservation_date}: ${lista}. Ofereça um desses ao cliente.`,
     }
   }
 
@@ -273,8 +265,10 @@ export async function confirmBooking(params: {
   // Dados que governam a reserva vêm TIPADOS (não de regex sobre `notes`).
   const party_size = params.partySize
   const hasPet = params.hasPet === true
-  const isXP = /xp/i.test(params.service || '') || /Menu\s*:\s*XP/i.test(notes)
-  const menu_choice = isXP ? 'XP' : 'Nippon'
+  // O menu é consequência do turno escolhido (cada horário pertence a um menu
+  // no catálogo), não de adivinhação sobre o texto de `service`/`notes`.
+  const turno = turnosForWeekday(weekdayOf(reservation_date)).find((t) => t.time === reservation_time)
+  const menu_choice = turno?.menu ?? MENUS[0].id
   const location = hasPet ? 'Deck/janela (pet)' : 'A definir pela equipe'
   const allergyRaw = params.allergies ?? null
   const allergy_notes = allergyRaw && allergyRaw.trim() && !/^nenhuma?$/i.test(allergyRaw.trim()) ? allergyRaw.trim() : null
