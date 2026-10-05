@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   MENUS,
   menuById,
@@ -6,6 +8,7 @@ import {
   isTurnoValido,
   noShowTotal,
   buildMenuRulesBlock,
+  menuComArte,
   CAPACITY_TOTAL,
   DECK_CAPACITY,
 } from './catalog'
@@ -120,5 +123,29 @@ describe('bloco de prompt gerado', () => {
   it('manda a IA tirar as vagas da ferramenta, não do texto', () => {
     expect(bloco).toContain('checkAvailability')
     expect(bloco).toMatch(/não contém vaga nenhuma/i)
+  })
+})
+
+describe('arte do menu', () => {
+  it('o menu vigente do jantar tem arte para enviar na saudação', () => {
+    const m = menuComArte()
+
+    expect(m?.id).toBe('Retrospectiva')
+    expect(m?.arte).toBe('/menu/retrospectiva-2.jpg')
+    expect(m?.arteLegenda).toBeTruthy()
+  })
+
+  it('a arte existe no disco, em public/', () => {
+    const m = menuComArte()
+    const caminho = path.join(process.cwd(), 'public', m!.arte!)
+
+    expect(fs.existsSync(caminho)).toBe(true)
+  })
+
+  it('a arte cabe no limite de imagem da Meta (5 MB)', () => {
+    const m = menuComArte()
+    const bytes = fs.statSync(path.join(process.cwd(), 'public', m!.arte!)).size
+
+    expect(bytes).toBeLessThan(5 * 1024 * 1024)
   })
 })

@@ -39,6 +39,10 @@ export interface Menu {
   descricao: string
   /** Aceita reserva pela IA. */
   reservavel: boolean
+  /** Arte do menu em `public/`, enviada ao cliente. Ausente = não envia. */
+  arte?: string
+  /** Legenda que acompanha a arte. */
+  arteLegenda?: string
 }
 
 export const CAPACITY_TOTAL = 9
@@ -68,6 +72,8 @@ export const MENUS: Menu[] = [
       '5 da cozinha, sobremesa e chá especial. Bebidas e serviço não inclusos. ' +
       'Não aceitamos vouchers ou cupons. Pagamento: PIX, débito, crédito ou dinheiro.',
     reservavel: true,
+    arte: '/menu/retrospectiva-2.jpg',
+    arteLegenda: 'Menu Retrospectiva 2.0 — os melhores pratos dos menus 5, 6 e 7. Últimas semanas.',
   },
   {
     id: 'XP',
@@ -186,4 +192,15 @@ export function buildMenuRulesBlock(): string {
   linhas.push('em tempo real. Este bloco não contém vaga nenhuma — sem consultar, você não sabe.')
 
   return linhas.join('\n')
+}
+
+/**
+ * Menu cuja arte é enviada ao cliente na saudação.
+ *
+ * É o primeiro menu do catálogo que tem arte — hoje, o do jantar. Trocar a
+ * arte é trocar o arquivo e esta linha, no mesmo lugar onde o preço e os
+ * turnos já vivem.
+ */
+export function menuComArte(): Menu | null {
+  return MENUS.find((m) => !!m.arte) ?? null
 }
