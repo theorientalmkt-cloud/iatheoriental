@@ -18,7 +18,7 @@ export interface StoreInfo {
 }
 
 export const DEFAULT_STORE_INFO: StoreInfo = {
-  address: 'Rua Luís Góis, 1499 - Vila Clementino, São Paulo - SP, CEP 04043-350',
+  address: 'Rua Luís Góis, 1499 - Mirandópolis, São Paulo - SP, CEP 04043-350',
   whatsappConfirm: '5511973832745',
   sendLinkAfterBooking: true,
 }
