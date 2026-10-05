@@ -769,15 +769,26 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
           inputSchema: z.object({
             slotStart: z.string().describe('ISO string exato do slot escolhido (retornado por checkAvailability)'),
             customerName: z.string().describe('Nome completo do cliente'),
+            // Campos OBRIGATÓRIOS e tipados: antes viajavam como texto dentro de
+            // `notes` e eram extraídos por regex, caindo em 1 pessoa / sem pet
+            // quando o padrão não casava. Exigi-los aqui faz o zod rejeitar a
+            // chamada incompleta — o modelo recebe o erro e refaz, em vez de a
+            // reserva entrar errada em silêncio.
+            partySize: z.number().int().min(1).max(9).describe('Número EXATO de pessoas do grupo (inteiro). Obrigatório.'),
+            hasPet: z.boolean().describe('true se o cliente trará pet, false se não. Obrigatório — pergunte antes.'),
+            allergies: z.string().describe('Alergias/restrições alimentares do grupo, ou "Nenhuma". Obrigatório — pergunte antes.'),
             service: z.string().optional().describe('Tipo de serviço (ex: consulta, visita, suporte)'),
-            notes: z.string().optional().describe('Observações adicionais do agendamento'),
+            notes: z.string().optional().describe('Observações livres adicionais'),
           }),
-          execute: async ({ slotStart, customerName, service, notes }) => {
-            console.log(`[chat-agent] 📅 LLM requested confirmBooking: ${customerName} @ ${slotStart}`)
+          execute: async ({ slotStart, customerName, partySize, hasPet, allergies, service, notes }) => {
+            console.log(`[chat-agent] 📅 LLM requested confirmBooking: ${customerName} @ ${slotStart} (${partySize}p, pet=${hasPet})`)
             const result = await confirmBooking({
               slotStart,
               customerName,
               customerPhone: conversation.phone,
+              partySize,
+              hasPet,
+              allergies,
               service,
               notes,
             })

@@ -192,20 +192,32 @@ export type BookingResult = {
   error?: string
 }
 
-function fieldFrom(notes: string, label: string): string | null {
-  const m = notes.match(new RegExp(`${label}\\s*:\\s*(.+)`, 'i'))
-  return m ? m[1].trim() : null
-}
-
 export async function confirmBooking(params: {
   slotStart: string
   customerName: string
   customerPhone: string
+  /** Número de pessoas. Argumento TIPADO — nunca extraído de texto livre. */
+  partySize: number
+  /** true se o cliente trará pet (só há lugar no deck/janela). */
+  hasPet?: boolean
+  /** Alergias/restrições. "Nenhuma" ou vazio = sem restrição. */
+  allergies?: string | null
   service?: string
   notes?: string
 }): Promise<BookingResult> {
   const supabase = getSupabaseAdmin()
   if (!supabase) return { success: false, error: 'Sistema indisponível no momento.' }
+
+  // O número de pessoas define a checagem de capacidade. Antes vinha de um
+  // regex sobre `notes` (prosa escrita pelo LLM) e caía em 1 silenciosamente
+  // quando o padrão não casava — o turno era vendido além da lotação. Agora é
+  // argumento tipado e um valor inválido FALHA em vez de virar 1.
+  if (!Number.isInteger(params.partySize) || params.partySize < 1) {
+    return { success: false, error: 'Número de pessoas inválido. Informe partySize como inteiro maior ou igual a 1.' }
+  }
+  if (params.partySize > CAPACITY_TOTAL) {
+    return { success: false, error: `A casa comporta no máximo ${CAPACITY_TOTAL} pessoas por turno.` }
+  }
 
   // A string SEM offset (o modelo manda "2026-06-27T19:00:00" naive) é hora de
   // São Paulo. Sem isto, new Date() usa o fuso do HOST (Vercel = UTC) e a hora
@@ -258,14 +270,14 @@ export async function confirmBooking(params: {
 
   const notes = params.notes || ''
 
-  // Extrai dados do bloco estruturado de notes (formato que o prompt já gera)
-  const party_size = parseInt((notes.match(/Pessoas\s*:\s*(\d+)/i) || [])[1] || '') || 1
-  const hasPet = /Pet\s*:\s*sim/i.test(notes)
+  // Dados que governam a reserva vêm TIPADOS (não de regex sobre `notes`).
+  const party_size = params.partySize
+  const hasPet = params.hasPet === true
   const isXP = /xp/i.test(params.service || '') || /Menu\s*:\s*XP/i.test(notes)
   const menu_choice = isXP ? 'XP' : 'Nippon'
   const location = hasPet ? 'Deck/janela (pet)' : 'A definir pela equipe'
-  const allergyRaw = fieldFrom(notes, 'Alergias')
-  const allergy_notes = allergyRaw && !/^nenhuma?$/i.test(allergyRaw) ? allergyRaw : null
+  const allergyRaw = params.allergies ?? null
+  const allergy_notes = allergyRaw && allergyRaw.trim() && !/^nenhuma?$/i.test(allergyRaw.trim()) ? allergyRaw.trim() : null
 
   // Re-checa capacidade no turno
   const { data: existing } = await supabase
@@ -334,5 +346,8 @@ Use SOMENTE depois de: consultar disponibilidade, o cliente escolher data/horár
 - slotStart: ISO string exato do turno escolhido (data + hora, ex: 2026-06-27T19:00:00 no horário de São Paulo).
 - customerName: nome completo do cliente.
 - service: "[PENDENTE] Nippon" ou "[PENDENTE] XP".
-- notes: bloco com Pessoas, Local, Menu, Alergias, Pet etc. (o número de pessoas é lido daqui).
+- partySize: número EXATO de pessoas, como inteiro (ex: 6). Obrigatório.
+- hasPet: true se o cliente trará pet, false se não. Obrigatório.
+- allergies: alergias/restrições do grupo, ou "Nenhuma". Obrigatório.
+- notes: observações livres adicionais (NÃO é de onde saem pessoas, pet ou alergias).
 NÃO invente horários — use apenas os retornados por checkAvailability.`
