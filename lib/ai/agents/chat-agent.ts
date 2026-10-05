@@ -20,6 +20,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { DEFAULT_MODEL_ID } from '@/lib/ai/model'
 import { getAiDirectConfig } from '@/lib/ai/ai-center-config'
 import type { AIAgent, InboxConversation, InboxMessage } from '@/types'
+import { CONCIERGE_PROMPT } from '@/lib/ai/prompts/concierge'
 
 // NOTE: AI dependencies are imported DYNAMICALLY inside processChatAgent
 // This is required because static imports can cause issues when called from
@@ -514,8 +515,20 @@ export async function processChatAgent(
     // Default false: handoff agora é opt-in. Evita LLMs com prompt fraco transferirem sem motivo.
     const handoffEnabled = agent.handoff_enabled ?? false
 
-    // Build system prompt: base + data atual + contact context + handoff instructions + memory context
-    let systemPrompt = agent.system_prompt
+    // Build system prompt: base FIXA no código + data atual + contact context +
+    // handoff instructions + memory context.
+    //
+    // A base vem de lib/ai/prompts/concierge.ts, versionada no git, e NÃO da
+    // coluna `ai_agents.system_prompt`. O texto do banco acumulou menu vencido,
+    // menu fora de cartaz e contradição interna sem que nada acusasse — não
+    // tinha histórico, review nem teste. Fixá-la em código devolve as três
+    // coisas. O campo do painel deixa de influenciar a conversa.
+    let systemPrompt = CONCIERGE_PROMPT
+    if (agent.system_prompt?.trim()) {
+      console.warn(
+        `[chat-agent] ⚠️ ai_agents.system_prompt (${agent.system_prompt.trim().length} chars) IGNORADO — a base agora é lib/ai/prompts/concierge.ts`
+      )
+    }
 
     // Injeta a data/hora atuais no contexto (evita a IA "chutar" datas)
     systemPrompt += `\n\n${dateContextBlock}`
@@ -1170,7 +1183,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
           const grounded = await generateText({
             model,
             system:
-              `${agent.system_prompt || ''}\n\n${dateContextBlock}\n\n` +
+              `${CONCIERGE_PROMPT}\n\n${dateContextBlock}\n\n` +
               `## DADOS REAIS DE DISPONIBILIDADE (consultados agora — fonte da verdade)\n${avail.message}\n\n` +
               `Sua resposta anterior foi:\n"${response.message}"\n\n` +
               `Essa resposta pode ter negado ou afirmado disponibilidade de forma incorreta. Reescreva-a usando SOMENTE os DADOS REAIS acima: se o dia/horario que o cliente pediu tem vaga, ofereca; se aquele dia esta lotado ou nao funciona, diga isso e ofereca a data valida mais proxima COM vaga que aparece nos dados. NUNCA diga que nao ha vaga se os dados mostram vaga. Nao invente horarios nem vagas. Responda apenas com a mensagem final ao cliente, tom sofisticado e cordial, texto simples, sem emojis.`,
