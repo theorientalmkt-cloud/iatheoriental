@@ -438,26 +438,12 @@ export function AIAgentForm({
               </div>
             </div>
 
-            {/* ═══════════════════════════════════════════════════════════════
-                SEÇÃO: System Prompt
-            ═══════════════════════════════════════════════════════════════ */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary-400" />
-                <Label htmlFor="systemPrompt">System Prompt</Label>
-              </div>
-              <Textarea
-                id="systemPrompt"
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder="Descreva como o agente deve se comportar..."
-                className="min-h-[180px] resize-none font-mono text-sm"
-                required
-              />
-              <p className="text-xs text-[var(--ds-text-muted)]">
-                Dica: Defina quem é o agente, o que ele faz e como deve se comportar. Quanto mais claro, melhor.
-              </p>
-            </div>
+            {/* O campo de System Prompt foi removido: a base da conversa vive em
+                lib/ai/prompts/concierge.ts, versionada no git. Enquanto estava
+                aqui, o texto acumulou menu fora de cartaz e contradição interna
+                sem que nada acusasse — e, depois que o código passou a ignorar
+                a coluna, editar este campo não surtia efeito nenhum. O valor
+                anterior está arquivado em lib/ai/prompts/concierge.historico.md. */}
 
             {/* ═══════════════════════════════════════════════════════════════
                 SEÇÃO: Parâmetros Avançados (Colapsável)
@@ -945,7 +931,7 @@ export function AIAgentForm({
             <Button
               type="submit"
               form="agent-form"
-              disabled={isSubmitting || !name || !systemPrompt || (isLLMProviderCheckComplete && !hasAvailableLLMProvider)}
+              disabled={isSubmitting || !name || (isLLMProviderCheckComplete && !hasAvailableLLMProvider)}
             >
               {isSubmitting ? (
                 <>
