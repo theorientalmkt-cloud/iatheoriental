@@ -57,3 +57,42 @@ describe('absoluteUrl', () => {
     expect(absoluteUrl('/menu/arte.jpg')).toBeNull()
   })
 })
+
+describe('origem a partir da requisição — sem configurar nada', () => {
+  const h = (o: Record<string, string>) => new Headers(o)
+
+  it('usa o host da requisição quando não há variável', () => {
+    expect(getBaseUrl(h({ host: 'iatheoriental.vercel.app' }))).toBe('https://iatheoriental.vercel.app')
+  })
+
+  it('atrás de proxy, respeita x-forwarded-host e x-forwarded-proto', () => {
+    const base = getBaseUrl(h({
+      host: 'interno.local',
+      'x-forwarded-host': 'theoriental.com.br',
+      'x-forwarded-proto': 'https',
+    }))
+
+    expect(base).toBe('https://theoriental.com.br')
+  })
+
+  it('em localhost assume http, não https', () => {
+    expect(getBaseUrl(h({ host: 'localhost:3000' }))).toBe('http://localhost:3000')
+  })
+
+  it('a variável explícita tem prioridade sobre a requisição', () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://theoriental.com.br'
+
+    expect(getBaseUrl(h({ host: 'deploy-antigo.vercel.app' }))).toBe('https://theoriental.com.br')
+  })
+
+  it('monta a URL da arte só com os cabeçalhos', () => {
+    expect(absoluteUrl('/menu/retrospectiva-2.jpg', h({ host: 'iatheoriental.vercel.app' })))
+      .toBe('https://iatheoriental.vercel.app/menu/retrospectiva-2.jpg')
+  })
+
+  it('requisição sem host cai para VERCEL_URL', () => {
+    process.env.VERCEL_URL = 'deploy.vercel.app'
+
+    expect(getBaseUrl(h({}))).toBe('https://deploy.vercel.app')
+  })
+})

@@ -345,13 +345,15 @@ export async function POST(req: NextRequest) {
         const { menuComArte } = await import('@/lib/menus/catalog')
         const { absoluteUrl } = await import('@/lib/base-url')
         const menu = menuComArte()
-        const mediaUrl = menu?.arte ? absoluteUrl(menu.arte) : null
+        // Os cabeçalhos da requisição dizem onde este serviço está — assim o
+        // envio funciona sem depender de variável de ambiente configurada.
+        const mediaUrl = menu?.arte ? absoluteUrl(menu.arte, req.headers) : null
 
         if (!menu?.arte) {
           console.log('🖼️ [AI-RESPOND] Nenhum menu com arte no catálogo — nada a enviar')
         } else if (!mediaUrl) {
           // A Meta busca a mídia pela URL; sem base pública não há o que enviar.
-          console.warn('🖼️ [AI-RESPOND] Arte do menu não enviada: defina NEXT_PUBLIC_APP_URL ou VERCEL_URL')
+          console.warn('🖼️ [AI-RESPOND] Arte do menu não enviada: origem desconhecida (sem host na requisição nem NEXT_PUBLIC_APP_URL)')
         } else {
           await new Promise((r) => setTimeout(r, 900))
           const sent = await sendWhatsAppMessage({
