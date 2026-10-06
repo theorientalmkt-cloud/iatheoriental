@@ -338,10 +338,9 @@ export async function POST(req: NextRequest) {
 
     // Função FIXA: na PRIMEIRA resposta da conversa (a saudação), envia a arte
     // do menu vigente. Determinístico de propósito — a IA não decide, logo não
-    // esquece nem manda duas vezes. `messages` foi carregado ANTES deste envio,
-    // então "nenhuma outbound ali" significa que esta é a primeira resposta.
-    const isPrimeiraResposta = !messages.some((m) => m.direction === 'outbound')
-    if (isPrimeiraResposta && messageIds.length > 0) {
+    // esquece nem manda duas vezes.
+    const { isFirstReply } = await import('@/lib/inbox/first-reply')
+    if (isFirstReply(messages) && messageIds.length > 0) {
       try {
         const { menuComArte } = await import('@/lib/menus/catalog')
         const { absoluteUrl } = await import('@/lib/base-url')

@@ -21,6 +21,7 @@
     "monitor:all": "node scripts/monitor-all.mjs --vercel-url https://smartzap-eta.vercel.app --qstash-url https://smartzap-eta.vercel.app/api/campaign/workflow",
     "builder:smoke": "tsx scripts/builder-smoke.ts",
     "test": "vitest run",
+    "test:oriental": "vitest run tests/scenarios/the-oriental-reserva.test.ts",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
