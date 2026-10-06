@@ -2,6 +2,8 @@
 
 import { useContactsController } from '@/hooks/useContacts'
 import { ContactListView } from '@/components/features/contacts/ContactListView'
+import { ReachedAudienceView } from '@/components/features/contacts/ReachedAudienceView'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { ContactsInitialData } from './actions'
 
 interface ContactsClientWrapperProps {
@@ -15,6 +17,13 @@ export function ContactsClientWrapper({ initialData }: ContactsClientWrapperProp
   const showLoading = controller.isLoading && !initialData
 
   return (
+    <Tabs defaultValue="contatos" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="contatos">Contatos</TabsTrigger>
+        <TabsTrigger value="alcancados">Público alcançado</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="contatos">
     <ContactListView
       contacts={controller.contacts}
       stats={controller.stats}
@@ -60,5 +69,11 @@ export function ContactsClientWrapper({ initialData }: ContactsClientWrapperProp
       isDeleting={controller.isDeleting}
       onUnsuppress={controller.onUnsuppress}
     />
+      </TabsContent>
+
+      <TabsContent value="alcancados">
+        <ReachedAudienceView />
+      </TabsContent>
+    </Tabs>
   )
 }
