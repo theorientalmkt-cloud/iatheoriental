@@ -336,6 +336,50 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ [AI-RESPOND] All ${messageIds.length} messages sent`)
 
+    // Função FIXA: na PRIMEIRA resposta da conversa (a saudação), envia a arte
+    // do menu vigente. Determinístico de propósito — a IA não decide, logo não
+    // esquece nem manda duas vezes.
+    const { isFirstReply } = await import('@/lib/inbox/first-reply')
+    if (isFirstReply(messages) && messageIds.length > 0) {
+      try {
+        const { menuComArte } = await import('@/lib/menus/catalog')
+        const { absoluteUrl } = await import('@/lib/base-url')
+        const menu = menuComArte()
+        const mediaUrl = menu?.arte ? absoluteUrl(menu.arte) : null
+
+        if (!menu?.arte) {
+          console.log('🖼️ [AI-RESPOND] Nenhum menu com arte no catálogo — nada a enviar')
+        } else if (!mediaUrl) {
+          // A Meta busca a mídia pela URL; sem base pública não há o que enviar.
+          console.warn('🖼️ [AI-RESPOND] Arte do menu não enviada: defina NEXT_PUBLIC_APP_URL ou VERCEL_URL')
+        } else {
+          await new Promise((r) => setTimeout(r, 900))
+          const sent = await sendWhatsAppMessage({
+            to: conversation.phone,
+            type: 'image',
+            mediaUrl,
+            caption: menu.arteLegenda,
+          })
+          if (sent.success && sent.messageId) {
+            await inboxDb.createMessage({
+              conversation_id: conversationId,
+              direction: 'outbound',
+              content: menu.arteLegenda || menu.nome,
+              message_type: 'image',
+              whatsapp_message_id: sent.messageId,
+              delivery_status: 'sent',
+            })
+            console.log(`✅ [AI-RESPOND] Arte do menu enviada: ${menu.nome}`)
+          } else {
+            console.error('❌ [AI-RESPOND] Falha ao enviar a arte do menu:', sent.error)
+          }
+        }
+      } catch (e) {
+        // O envio da arte nunca derruba a resposta ao cliente.
+        console.error('❌ [AI-RESPOND] Erro ao enviar a arte do menu:', e)
+      }
+    }
+
     // Função FIXA: após uma reserva confirmada, envia o link do WhatsApp da loja
     // (pagamento/detalhes). Fonte: settings.store_info — não depende do prompt.
     if (result.reservationConfirmed) {

@@ -1,0 +1,151 @@
+import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
+import {
+  MENUS,
+  menuById,
+  turnosForWeekday,
+  isTurnoValido,
+  noShowTotal,
+  buildMenuRulesBlock,
+  menuComArte,
+  CAPACITY_TOTAL,
+  DECK_CAPACITY,
+} from './catalog'
+
+// Dias: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
+
+describe('turnos derivados do catálogo', () => {
+  it('segunda não tem turno — a casa fecha', () => {
+    expect(turnosForWeekday(1)).toEqual([])
+  })
+
+  it('terça e quarta têm só o jantar (19h e 21h)', () => {
+    for (const wd of [2, 3]) {
+      expect(turnosForWeekday(wd).map((t) => t.time)).toEqual(['19:00', '21:00'])
+    }
+  })
+
+  it('quinta a sábado somam almoço XP e jantar, em ordem de horário', () => {
+    for (const wd of [4, 5, 6]) {
+      expect(turnosForWeekday(wd).map((t) => t.time)).toEqual(['13:00', '19:00', '21:00'])
+    }
+  })
+
+  it('domingo tem só o almoço XP', () => {
+    expect(turnosForWeekday(0).map((t) => t.time)).toEqual(['13:00'])
+  })
+})
+
+describe('isTurnoValido — a REGRA 4 como checagem, não como instrução', () => {
+  it('aceita os turnos reais', () => {
+    expect(isTurnoValido(2, '19:00')).toBe(true)
+    expect(isTurnoValido(6, '21:00')).toBe(true)
+    expect(isTurnoValido(0, '13:00')).toBe(true)
+  })
+
+  it('recusa os horários que o prompt listava como inventados', () => {
+    // O prompt proibia explicitamente estes; agora não passam.
+    for (const h of ['12:00', '12:30', '13:30', '14:00', '15:00', '18:00', '20:00', '22:00']) {
+      expect(isTurnoValido(5, h)).toBe(false)
+    }
+  })
+
+  it('recusa turno em dia que ele não funciona', () => {
+    expect(isTurnoValido(0, '19:00')).toBe(false) // jantar no domingo
+    expect(isTurnoValido(2, '13:00')).toBe(false) // almoço XP na terça
+    expect(isTurnoValido(1, '19:00')).toBe(false) // segunda, fechado
+  })
+})
+
+describe('catálogo do menu vigente', () => {
+  it('só o Retrospectiva 2.0 e o XP estão no ar', () => {
+    expect(MENUS.map((m) => m.id).sort()).toEqual(['Retrospectiva', 'XP'])
+  })
+
+  it('menus encerrados não estão no catálogo', () => {
+    // Nippon e Furusato saíram de cartaz; enquanto seguiram no prompt, a IA
+    // anunciou a clientes um menu que não existia mais.
+    const nomes = MENUS.map((m) => `${m.id} ${m.nome}`).join(' ').toLowerCase()
+    expect(nomes).not.toContain('nippon')
+    expect(nomes).not.toContain('furusato')
+    expect(nomes).not.toContain('namorados')
+  })
+
+  it('preços e turnos batem com a arte vigente', () => {
+    const r = menuById('Retrospectiva')
+    expect(r.precoPorPessoa).toBe(380)
+    expect(r.horarios).toEqual(['19:00', '21:00'])
+    expect(r.dias).toEqual([2, 3, 4, 5, 6]) // Terça à Sábado
+
+    const xp = menuById('XP')
+    expect(xp.precoPorPessoa).toBe(210)
+    expect(xp.horarios).toEqual(['13:00'])
+  })
+
+  it('id desconhecido falha alto, em vez de virar um menu qualquer', () => {
+    expect(() => menuById('Nippon')).toThrow(/desconhecido/i)
+  })
+})
+
+describe('taxa de no-show — cálculo sai do LLM', () => {
+  it('multiplica pelo número de pessoas', () => {
+    expect(noShowTotal('Retrospectiva', 1)).toBe(100)
+    expect(noShowTotal('Retrospectiva', 6)).toBe(600)
+    expect(noShowTotal('XP', 4)).toBe(200)
+  })
+})
+
+describe('bloco de prompt gerado', () => {
+  const bloco = buildMenuRulesBlock()
+
+  it('traz o menu vigente com preço e horários', () => {
+    expect(bloco).toContain('Menu Retrospectiva 2.0')
+    expect(bloco).toContain('R$ 380 por pessoa')
+    expect(bloco).toContain('Terça a Sábado')
+    expect(bloco).toContain('APENAS 19h ou 21h')
+  })
+
+  it('não cita menus encerrados', () => {
+    expect(bloco.toLowerCase()).not.toContain('nippon')
+    expect(bloco.toLowerCase()).not.toContain('furusato')
+  })
+
+  it('diz que segunda é fechado', () => {
+    expect(bloco).toMatch(/FECHADO: Segunda/)
+  })
+
+  it('declara a capacidade real da casa', () => {
+    expect(bloco).toContain(`${CAPACITY_TOTAL} lugares por turno`)
+    expect(bloco).toContain(`${DECK_CAPACITY} ficam no deck/janela`)
+  })
+
+  it('manda a IA tirar as vagas da ferramenta, não do texto', () => {
+    expect(bloco).toContain('checkAvailability')
+    expect(bloco).toMatch(/não contém vaga nenhuma/i)
+  })
+})
+
+describe('arte do menu', () => {
+  it('o menu vigente do jantar tem arte para enviar na saudação', () => {
+    const m = menuComArte()
+
+    expect(m?.id).toBe('Retrospectiva')
+    expect(m?.arte).toBe('/menu/retrospectiva-2.jpg')
+    expect(m?.arteLegenda).toBeTruthy()
+  })
+
+  it('a arte existe no disco, em public/', () => {
+    const m = menuComArte()
+    const caminho = path.join(process.cwd(), 'public', m!.arte!)
+
+    expect(fs.existsSync(caminho)).toBe(true)
+  })
+
+  it('a arte cabe no limite de imagem da Meta (5 MB)', () => {
+    const m = menuComArte()
+    const bytes = fs.statSync(path.join(process.cwd(), 'public', m!.arte!)).size
+
+    expect(bytes).toBeLessThan(5 * 1024 * 1024)
+  })
+})
