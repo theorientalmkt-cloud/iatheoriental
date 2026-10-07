@@ -31,6 +31,7 @@ import type {
 } from '@/lib/ai/ai-center-defaults'
 import { toast } from 'sonner'
 import { useSettingsAIController } from '@/hooks/useSettingsAI'
+import { ProviderStatusCard } from '@/components/features/settings/ai/ProviderStatusCard'
 
 type PromptItem = {
   id: string
@@ -586,6 +587,12 @@ export default function AICenterPage() {
 
       {/* AI Gateway Section */}
       <AIGatewayPanel />
+
+      {/* Saúde e consumo: avisa quando o modelo principal para de responder.
+          Antes, o failover era silencioso — quando os créditos do Google
+          acabaram, o atendimento degradou para o modelo reserva e nada no
+          painel acusou. A falha só apareceu no metadata dos logs, no banco. */}
+      <ProviderStatusCard />
 
       <div className="space-y-6">
         <section className="glass-panel rounded-2xl p-6">
