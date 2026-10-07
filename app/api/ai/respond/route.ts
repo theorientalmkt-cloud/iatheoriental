@@ -381,15 +381,22 @@ export async function POST(req: NextRequest) {
         console.error('❌ [AI-RESPOND] Erro ao enviar a arte do menu:', e)
       }
 
-      // Função FIXA: na primeira resposta, oferece o WhatsApp oficial do
-      // restaurante. Determinístico porque é o caminho do lead para o
-      // atendimento humano — depender do julgamento do modelo significaria
-      // esquecer justo com quem precisava de gente.
+    }
+
+    // Função FIXA: toda conversa recebe o WhatsApp oficial do restaurante uma
+    // vez. Fica FORA do bloco de primeira resposta de propósito — amarrado à
+    // saudação, quem já estava conversando nunca receberia o link, justamente
+    // quem pode estar precisando falar com a equipe agora.
+    if (messageIds.length > 0) {
       try {
         const { getStoreInfo, storeWhatsAppLink } = await import('@/lib/store-info')
+        const { precisaEnviarContatoOficial } = await import('@/lib/inbox/contato-oficial')
         const store = await getStoreInfo()
         const link = storeWhatsAppLink(store.whatsappConfirm)
-        if (link) {
+
+        if (!link) {
+          console.warn('📞 [AI-RESPOND] WhatsApp oficial não enviado: número não configurado em Dados da Loja')
+        } else if (await precisaEnviarContatoOficial(conversationId, link)) {
           const texto = `Se preferir falar direto com a nossa equipe, é por aqui: ${link}`
           await new Promise((r) => setTimeout(r, 900))
           const sent = await sendWhatsAppMessage({ to: conversation.phone, type: 'text', text: texto })
@@ -402,12 +409,13 @@ export async function POST(req: NextRequest) {
               whatsapp_message_id: sent.messageId,
               delivery_status: 'sent',
             })
-            console.log('✅ [AI-RESPOND] WhatsApp oficial enviado na saudação')
+            console.log('✅ [AI-RESPOND] WhatsApp oficial enviado')
+          } else {
+            console.error('❌ [AI-RESPOND] Falha ao enviar o WhatsApp oficial:', sent.error)
           }
-        } else {
-          console.warn('📞 [AI-RESPOND] WhatsApp oficial não enviado: número não configurado em Dados da Loja')
         }
       } catch (e) {
+        // Nunca derruba a resposta ao cliente.
         console.error('❌ [AI-RESPOND] Erro ao enviar o WhatsApp oficial:', e)
       }
     }
