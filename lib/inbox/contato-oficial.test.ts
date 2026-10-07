@@ -20,7 +20,7 @@ vi.mock('@/lib/supabase', () => ({
   }),
 }))
 
-import { precisaEnviarContatoOficial } from './contato-oficial'
+import { precisaEnviarContatoOficial, mensagemContatoOficial } from './contato-oficial'
 
 const LINK = 'https://wa.me/5511973832745'
 
@@ -66,5 +66,25 @@ describe('envio único do WhatsApp oficial por conversa', () => {
     erro = { message: 'timeout' }
 
     expect(await precisaEnviarContatoOficial('conv_1', LINK)).toBe(false)
+  })
+})
+
+describe('mensagem com o número oficial de reservas', () => {
+  it('traz o link completo, clicável no WhatsApp', () => {
+    expect(mensagemContatoOficial(LINK)).toContain(LINK)
+  })
+
+  it('diz que é para reserva, não só atendimento genérico', () => {
+    // A campanha saiu com o link errado; a mensagem precisa deixar claro para
+    // que serve o número, senão o cliente ignora como assinatura.
+    expect(mensagemContatoOficial(LINK)).toMatch(/para reservas e atendimento/i)
+  })
+
+  it('pede o contato de forma explícita', () => {
+    expect(mensagemContatoOficial(LINK)).toMatch(/é só chamar/i)
+  })
+
+  it('identifica a casa, para o cliente saber de quem é o número', () => {
+    expect(mensagemContatoOficial(LINK)).toContain('The Oriental Sushiya')
   })
 })

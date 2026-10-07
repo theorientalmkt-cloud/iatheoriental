@@ -390,14 +390,14 @@ export async function POST(req: NextRequest) {
     if (messageIds.length > 0) {
       try {
         const { getStoreInfo, storeWhatsAppLink } = await import('@/lib/store-info')
-        const { precisaEnviarContatoOficial } = await import('@/lib/inbox/contato-oficial')
+        const { precisaEnviarContatoOficial, mensagemContatoOficial } = await import('@/lib/inbox/contato-oficial')
         const store = await getStoreInfo()
         const link = storeWhatsAppLink(store.whatsappConfirm)
 
         if (!link) {
           console.warn('📞 [AI-RESPOND] WhatsApp oficial não enviado: número não configurado em Dados da Loja')
         } else if (await precisaEnviarContatoOficial(conversationId, link)) {
-          const texto = `Se preferir falar direto com a nossa equipe, é por aqui: ${link}`
+          const texto = mensagemContatoOficial(link)
           await new Promise((r) => setTimeout(r, 900))
           const sent = await sendWhatsAppMessage({ to: conversation.phone, type: 'text', text: texto })
           if (sent.success && sent.messageId) {
