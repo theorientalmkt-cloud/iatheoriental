@@ -27,7 +27,10 @@ vi.mock('@/lib/supabase', () => ({
   }),
 }))
 
-vi.mock('./contato-oficial', () => ({
+// Mock parcial: só a checagem de duplicidade é simulada. O texto da mensagem
+// vem do módulo real, para o teste conferir o que o cliente de fato recebe.
+vi.mock('./contato-oficial', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./contato-oficial')>()),
   precisaEnviarContatoOficial: (conversationId: string) =>
     Promise.resolve(!jaReceberam.has(conversationId)),
 }))

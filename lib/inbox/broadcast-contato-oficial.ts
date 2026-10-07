@@ -20,7 +20,7 @@
  */
 
 import { getSupabaseAdmin } from '@/lib/supabase'
-import { precisaEnviarContatoOficial } from './contato-oficial'
+import { precisaEnviarContatoOficial, mensagemContatoOficial } from './contato-oficial'
 
 export interface BroadcastResultado {
   simulacao: boolean
@@ -104,7 +104,7 @@ export async function dispararContatoOficial(
     }
   }
 
-  const texto = `Se preferir falar direto com a nossa equipe, é por aqui: ${link}`
+  const texto = mensagemContatoOficial(link)
   const pausar = deps.pausar ?? ((ms: number) => new Promise((res) => setTimeout(res, ms)))
 
   for (const [conversationId, phone] of porConversa) {
