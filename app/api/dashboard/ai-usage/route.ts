@@ -19,7 +19,31 @@ interface LogRow {
   model_used: string | null
   tokens_used: number | null
   error_message: string | null
-  metadata: { failover?: boolean; usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number } } | null
+  metadata: {
+    failover?: boolean
+    primaryModel?: string
+    primaryError?: string
+    usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number }
+  } | null
+}
+
+/**
+ * Classifica o erro do provider principal numa causa acionável.
+ *
+ * Saber que "houve failover" não diz o que fazer. Crédito esgotado se resolve
+ * no billing; cota se resolve esperando ou subindo o limite; chave inválida se
+ * resolve trocando a chave. Sem isso, o painel vira um alarme sem instrução.
+ */
+export type CausaFalha = 'creditos' | 'cota' | 'credencial' | 'modelo' | 'desconhecida'
+
+export function classificarErroProvider(erro: string | null | undefined): CausaFalha {
+  const e = (erro || '').toLowerCase()
+  if (!e) return 'desconhecida'
+  if (e.includes('prepayment') || e.includes('credits are depleted') || e.includes('billing')) return 'creditos'
+  if (e.includes('quota') || e.includes('resource_exhausted') || e.includes('rate limit') || e.includes('429')) return 'cota'
+  if (e.includes('api key') || e.includes('unauthenticated') || e.includes('permission') || e.includes('401') || e.includes('403')) return 'credencial'
+  if (e.includes('malformed function call') || e.includes('not found') || e.includes('unsupported')) return 'modelo'
+  return 'desconhecida'
 }
 
 export async function GET(request: NextRequest) {
@@ -58,6 +82,10 @@ export async function GET(request: NextRequest) {
     let chamadasComErro = 0
     let failovers = 0
     let chamadasSemTokens = 0
+
+    // Último failover do período. `rows` vem em ordem decrescente, então o
+    // primeiro encontrado é o mais recente.
+    const ultimoFailover = rows.find((r) => r.metadata?.failover === true) || null
     let tokensInput = 0
     let tokensOutput = 0
     let tokensTotal = 0
@@ -110,6 +138,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         periodoDias: days,
+        // Estado do provider principal: o que estava invisível no painel e só
+        // aparecia consultando o metadata no banco.
+        providerPrincipal: {
+          emFailover: Boolean(ultimoFailover),
+          modelo: ultimoFailover?.metadata?.primaryModel ?? null,
+          ultimoErro: ultimoFailover?.metadata?.primaryError ?? null,
+          ultimoErroEm: ultimoFailover?.created_at ?? null,
+          causa: classificarErroProvider(ultimoFailover?.metadata?.primaryError),
+          falhas: failovers,
+        },
         chamadas,
         chamadasComErro,
         taxaFailover: chamadas ? failovers / chamadas : 0,

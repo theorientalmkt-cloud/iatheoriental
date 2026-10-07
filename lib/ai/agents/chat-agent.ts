@@ -446,8 +446,16 @@ export async function processChatAgent(
     const altProvider = resolvedProvider === 'google' ? 'openai' : 'google'
     const altKey = altProvider === 'openai' ? directConfig.openaiApiKey : directConfig.googleApiKey
     if (!altKey) return false // sem chave do outro provedor → não há failover
-    // Reserva RAPIDA: gpt-4o-mini (o gpt-4o e lento). Se o primario for OpenAI, cai no Gemini.
-    const altModelId = altProvider === 'openai' ? 'gpt-4o-mini' : DEFAULT_MODEL_ID
+    // O reserva precisa dar conta do MESMO trabalho do primario. Era gpt-4o-mini,
+    // escolhido por latencia ("o gpt-4o e lento"), mas o mini nao encadeia
+    // checkAvailability -> respond de forma confiavel: com toolChoice 'required'
+    // ele repete a consulta, esgota os 3 steps e termina sem chamar respond.
+    //
+    // Na pratica isso trocou uma falha VISIVEL (Gemini fora do ar) por uma
+    // ERRADA: quando os creditos do Google acabaram, todo cliente que perguntou
+    // de vaga recebeu "Tive um problema tecnico momentaneo" — e o painel nao
+    // acusou nada. Alguns segundos a mais valem menos que a reserva perdida.
+    const altModelId = altProvider === 'openai' ? 'gpt-4o' : DEFAULT_MODEL_ID
     const altRaw =
       altProvider === 'openai'
         ? createOpenAI({ apiKey: altKey })(altModelId)
