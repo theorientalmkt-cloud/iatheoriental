@@ -110,3 +110,26 @@ describe('tamanho', () => {
     expect(palavras).toBeLessThan(1400)
   })
 })
+
+describe('caminho para o atendimento humano', () => {
+  it('manda oferecer o WhatsApp oficial quando precisa de gente', () => {
+    expect(CONCIERGE_PROMPT).toContain('Falar com a equipe')
+    expect(CONCIERGE_PROMPT).toMatch(/whatsapp oficial do restaurante/i)
+  })
+
+  it('proíbe prometer encaminhamento sem dar o link', () => {
+    // O prompt antigo dizia "vou direcionar você para nossa equipe" e parava
+    // aí: o cliente ficava esperando um contato que nunca vinha.
+    expect(CONCIERGE_PROMPT).toMatch(/nunca diga apenas "vou direcionar/i)
+  })
+
+  it('deixa claro que o link não substitui a reserva', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/você conduz normalmente até o fim/i)
+  })
+
+  it('não escreve o número no prompt — ele vem dos DADOS DA LOJA', () => {
+    // Número fixo aqui divergiria do painel na primeira troca.
+    expect(CONCIERGE_PROMPT).not.toContain('5511973832745')
+    expect(CONCIERGE_PROMPT).not.toContain('97383-2745')
+  })
+})

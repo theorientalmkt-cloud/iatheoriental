@@ -544,10 +544,17 @@ export async function processChatAgent(
     // Injeta os DADOS DA LOJA (endereço) — fonte FIXA no banco, não no prompt.
     // Assim a IA sempre acerta o endereço e você atualiza sem editar o prompt.
     try {
-      const { getStoreInfo } = await import('@/lib/store-info')
+      const { getStoreInfo, storeWhatsAppLink } = await import('@/lib/store-info')
       const store = await getStoreInfo()
-      if (store.address) {
-        systemPrompt += `\n\n## DADOS DA LOJA (oficiais — use SEMPRE estes, nunca invente)\nEndereço: ${store.address}`
+      const linhas: string[] = []
+      if (store.address) linhas.push(`Endereço: ${store.address}`)
+      // O WhatsApp oficial entra no contexto porque o prompt manda "direcionar
+      // para nossa equipe" em vários pontos — e, sem o link, a IA prometia um
+      // encaminhamento que não acontecia. O lead ficava esperando.
+      const link = storeWhatsAppLink(store.whatsappConfirm)
+      if (link) linhas.push(`WhatsApp oficial do restaurante: ${link}`)
+      if (linhas.length) {
+        systemPrompt += `\n\n## DADOS DA LOJA (oficiais — use SEMPRE estes, nunca invente)\n${linhas.join('\n')}`
       }
     } catch {
       // segue sem os dados da loja

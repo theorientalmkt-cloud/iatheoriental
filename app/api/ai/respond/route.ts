@@ -380,6 +380,36 @@ export async function POST(req: NextRequest) {
         // O envio da arte nunca derruba a resposta ao cliente.
         console.error('❌ [AI-RESPOND] Erro ao enviar a arte do menu:', e)
       }
+
+      // Função FIXA: na primeira resposta, oferece o WhatsApp oficial do
+      // restaurante. Determinístico porque é o caminho do lead para o
+      // atendimento humano — depender do julgamento do modelo significaria
+      // esquecer justo com quem precisava de gente.
+      try {
+        const { getStoreInfo, storeWhatsAppLink } = await import('@/lib/store-info')
+        const store = await getStoreInfo()
+        const link = storeWhatsAppLink(store.whatsappConfirm)
+        if (link) {
+          const texto = `Se preferir falar direto com a nossa equipe, é por aqui: ${link}`
+          await new Promise((r) => setTimeout(r, 900))
+          const sent = await sendWhatsAppMessage({ to: conversation.phone, type: 'text', text: texto })
+          if (sent.success && sent.messageId) {
+            await inboxDb.createMessage({
+              conversation_id: conversationId,
+              direction: 'outbound',
+              content: texto,
+              message_type: 'text',
+              whatsapp_message_id: sent.messageId,
+              delivery_status: 'sent',
+            })
+            console.log('✅ [AI-RESPOND] WhatsApp oficial enviado na saudação')
+          }
+        } else {
+          console.warn('📞 [AI-RESPOND] WhatsApp oficial não enviado: número não configurado em Dados da Loja')
+        }
+      } catch (e) {
+        console.error('❌ [AI-RESPOND] Erro ao enviar o WhatsApp oficial:', e)
+      }
     }
 
     // Função FIXA: após uma reserva confirmada, envia o link do WhatsApp da loja
