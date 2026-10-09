@@ -27,8 +27,11 @@ export interface Menu {
   nome: string
   /** Preço por pessoa, em reais. */
   precoPorPessoa: number
-  /** Taxa de no-show por pessoa, em reais. Cobrada só se o cliente faltar. */
-  noShowPorPessoa: number
+  /**
+   * Taxa de no-show da RESERVA, em reais — valor único, não multiplicado pelo
+   * número de pessoas. Cobrada só se o cliente faltar.
+   */
+  noShowPorReserva: number
   /** Dias em que este menu é servido. */
   dias: Weekday[]
   /** Horários exatos de início. Não existe horário fora desta lista. */
@@ -63,7 +66,7 @@ export const MENUS: Menu[] = [
     id: 'Retrospectiva',
     nome: 'Menu Retrospectiva 2.0',
     precoPorPessoa: 380,
-    noShowPorPessoa: 100,
+    noShowPorReserva: 100,
     dias: [2, 3, 4, 5, 6], // Ter a Sáb
     horarios: ['19:00', '21:00'],
     rotulo: (h) => `Jantar ${h.slice(0, 2)}h`,
@@ -79,7 +82,7 @@ export const MENUS: Menu[] = [
     id: 'XP',
     nome: 'Omakase Experience XP',
     precoPorPessoa: 210,
-    noShowPorPessoa: 50,
+    noShowPorReserva: 50,
     dias: [4, 5, 6, 0], // Qui a Dom
     horarios: ['13:00'],
     rotulo: () => 'Almoço XP 13h',
@@ -129,9 +132,15 @@ export function isTurnoValido(wd: number, horario: string): boolean {
   return turnosForWeekday(wd).some((t) => t.time === horario)
 }
 
-/** Taxa de no-show total do grupo. Cálculo sai do LLM e vem para o código. */
-export function noShowTotal(menuId: string, pessoas: number): number {
-  return menuById(menuId).noShowPorPessoa * pessoas
+/**
+ * Taxa de no-show da reserva.
+ *
+ * Não depende do número de pessoas: é um valor por reserva. O prompt antigo
+ * mandava multiplicar ("R$ 100 x [pessoas]"), então um grupo de 6 ouvia
+ * R$ 600 em vez de R$ 100.
+ */
+export function noShowDaReserva(menuId: string): number {
+  return menuById(menuId).noShowPorReserva
 }
 
 const WD_NOME: Record<number, string> = {
@@ -171,7 +180,7 @@ export function buildMenuRulesBlock(): string {
     linhas.push(`### ${m.nome} — R$ ${m.precoPorPessoa} por pessoa`)
     linhas.push(`- Dias: ${diasLegiveis(m.dias)}`)
     linhas.push(`- Horários: APENAS ${m.horarios.map((h) => `${h.slice(0, 2)}h`).join(' ou ')}`)
-    linhas.push(`- Taxa de no-show: R$ ${m.noShowPorPessoa} por pessoa, cobrada SOMENTE se o cliente não comparecer (não é sinal nem entrada)`)
+    linhas.push(`- Taxa de no-show: R$ ${m.noShowPorReserva} por reserva (valor único, NÃO multiplique pelo número de pessoas), cobrada SOMENTE se o cliente não comparecer — não é sinal nem entrada`)
     linhas.push(`- ${m.descricao}`)
     linhas.push('')
   }
