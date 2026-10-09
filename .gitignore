@@ -101,13 +101,19 @@ coverage/
 .nyc_output/
 
 # Testes (mantidos apenas localmente - repo público)
-tests/
+# `tests/*` e não `tests/`: com a pasta inteira ignorada o git nem entra
+# nela, e as exceções abaixo não teriam efeito.
+tests/*
 # Helpers de teste são necessários no CI
 !tests/helpers/
 !tests/helpers/**
 # Testes de integração da API de agentes IA
 !tests/api/
 !tests/api/**
+# Roteiro de verificação do atendimento — precisa rodar no CI, senão a
+# regressão que ele cobre só aparece em produção.
+!tests/scenarios/
+!tests/scenarios/**
 
 # Legacy (can be removed)
 # vite.config.ts
