@@ -143,7 +143,7 @@ describe('taxa de no-show é informada, não só sabida', () => {
   })
 
   it('explica que não é sinal nem entrada', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/não é sinal nem entrada/i)
+    expect(CONCIERGE_PROMPT).toMatch(/não é sinal, não é entrada/i)
     expect(CONCIERGE_PROMPT).toMatch(/apenas em caso de não comparecimento/i)
   })
 
@@ -154,9 +154,16 @@ describe('taxa de no-show é informada, não só sabida', () => {
     //
     // (O R$ 100 da taxa de ROLHA segue no prompt de propósito: não é preço de
     // menu e não existe no catálogo.)
-    expect(CONCIERGE_PROMPT).toContain('taxa de no-show de R$ [valor] por pessoa')
+    expect(CONCIERGE_PROMPT).toContain('taxa de no-show de R$ [valor] por reserva')
     expect(CONCIERGE_PROMPT).not.toMatch(/taxa de no-show de R\$\s*\d/i)
-    expect(CONCIERGE_PROMPT).not.toMatch(/no-show[^.\n]*R\$\s*\d+\s*por pessoa/i)
+  })
+
+  it('proíbe multiplicar pelo número de pessoas', () => {
+    // A taxa é da reserva. O prompt antigo mandava "R$ 100 x [pessoas]", e um
+    // grupo de 6 era informado de R$ 600 em vez de R$ 100.
+    expect(CONCIERGE_PROMPT).toMatch(/valor ÚNICO por reserva/i)
+    expect(CONCIERGE_PROMPT).toMatch(/nunca multiplique pelo número de pessoas/i)
+    expect(CONCIERGE_PROMPT).not.toMatch(/no-show[^.\n]*por pessoa/i)
   })
 
   it('mantém a taxa fora de negociação', () => {

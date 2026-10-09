@@ -6,7 +6,7 @@ import {
   menuById,
   turnosForWeekday,
   isTurnoValido,
-  noShowTotal,
+  noShowDaReserva,
   buildMenuRulesBlock,
   menuComArte,
   CAPACITY_TOTAL,
@@ -88,11 +88,16 @@ describe('catálogo do menu vigente', () => {
   })
 })
 
-describe('taxa de no-show — cálculo sai do LLM', () => {
-  it('multiplica pelo número de pessoas', () => {
-    expect(noShowTotal('Retrospectiva', 1)).toBe(100)
-    expect(noShowTotal('Retrospectiva', 6)).toBe(600)
-    expect(noShowTotal('XP', 4)).toBe(200)
+describe('taxa de no-show — valor da reserva, não por pessoa', () => {
+  it('é o mesmo valor independente do tamanho do grupo', () => {
+    // O prompt antigo mandava multiplicar ("R$ 100 x [pessoas]"), então um
+    // grupo de 6 ouvia R$ 600 em vez de R$ 100.
+    expect(noShowDaReserva('Retrospectiva')).toBe(100)
+    expect(noShowDaReserva('XP')).toBe(50)
+  })
+
+  it('o bloco do prompt proíbe multiplicar', () => {
+    expect(buildMenuRulesBlock()).toMatch(/NÃO multiplique pelo número de pessoas/i)
   })
 })
 
