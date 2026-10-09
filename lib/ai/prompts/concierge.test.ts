@@ -133,3 +133,33 @@ describe('caminho para o atendimento humano', () => {
     expect(CONCIERGE_PROMPT).not.toContain('97383-2745')
   })
 })
+
+describe('taxa de no-show é informada, não só sabida', () => {
+  it('manda informar antes de criar a reserva', () => {
+    // A IA já recebia o valor no bloco de menus, mas o prompt só dizia "não
+    // negocie". Ela respondia se perguntassem — e o cliente podia reservar
+    // sem nunca ouvir falar da taxa, descobrindo depois.
+    expect(CONCIERGE_PROMPT).toMatch(/informe a taxa de no-show antes de criar a reserva/i)
+  })
+
+  it('explica que não é sinal nem entrada', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/não é sinal nem entrada/i)
+    expect(CONCIERGE_PROMPT).toMatch(/apenas em caso de não comparecimento/i)
+  })
+
+  it('não escreve o valor da taxa — ele vem do catálogo', () => {
+    // Valor fixo aqui divergiria do catálogo na primeira mudança de menu, que
+    // é exatamente o erro que o Nippon deixou acontecer. A instrução usa um
+    // placeholder; o número chega pelo bloco MENUS E HORÁRIOS.
+    //
+    // (O R$ 100 da taxa de ROLHA segue no prompt de propósito: não é preço de
+    // menu e não existe no catálogo.)
+    expect(CONCIERGE_PROMPT).toContain('taxa de no-show de R$ [valor] por pessoa')
+    expect(CONCIERGE_PROMPT).not.toMatch(/taxa de no-show de R\$\s*\d/i)
+    expect(CONCIERGE_PROMPT).not.toMatch(/no-show[^.\n]*R\$\s*\d+\s*por pessoa/i)
+  })
+
+  it('mantém a taxa fora de negociação', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/não é negociável/i)
+  })
+})
