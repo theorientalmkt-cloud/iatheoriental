@@ -212,6 +212,24 @@ const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_TOKENS = 2048
 const AI_TIMEOUT_MS = 30_000 // 30s - timeout por tentativa de chamada à IA
 const MAX_TOOL_RETRIES = 2 // Tentativas extras quando LLM não chama respond tool
+
+/**
+ * A IA faz reserva?
+ *
+ * Não. Reserva é da equipe, pelo WhatsApp oficial — a IA informa menu,
+ * horários e políticas, e encaminha.
+ *
+ * A trava fica aqui, e não só no toggle do painel nem só no prompt, porque
+ * nenhum dos dois segura sozinho: o toggle alguém religa sem perceber, e
+ * proibição em prompt é instrução, não garantia. Com as ferramentas fora do
+ * registro, a IA não tem como consultar a agenda — logo não tem como anunciar
+ * vaga nem prometer reserva, por mais que o cliente insista.
+ *
+ * Para reativar: `true` aqui, mais o toggle do agente ligado. A implementação
+ * de reserva segue inteira e testada (dados tipados, validação de turno,
+ * trava de duplicidade) — só não está acessível.
+ */
+export const RESERVA_PELA_IA = false
 const MAX_PROVIDER_RETRIES = 2 // Tentativas extras em erro/timeout do provider (rate-limit, rede)
 const PROVIDER_RETRY_BACKOFF_MS = 800 // Backoff base entre tentativas (dobra a cada retry)
 
@@ -736,7 +754,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
     //   A) Flow form (mini-app Meta) — requer Flow aprovado pela Meta
     //   B) Booking por texto (checkAvailability + confirmBooking) — só requer Calendar conectado
     // O LLM escolhe a via mais apropriada baseado no prompt e disponibilidade.
-    if (agent.booking_tool_enabled) {
+    if (RESERVA_PELA_IA && agent.booking_tool_enabled) {
       console.log(`[chat-agent] 📅 Booking tool enabled, checking prerequisites...`)
 
       // --- Via A: Flow form ---
@@ -1180,7 +1198,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
   //     Se houver vaga real no periodo, REFAZ a resposta com os dados reais.
   //  b) A resposta AFIRMA vagas mas a IA NAO chamou a ferramenta — verifica.
   // =========================================================================
-  if (response && agent.booking_tool_enabled) {
+  if (RESERVA_PELA_IA && response && agent.booking_tool_enabled) {
     const negaDisponibilidade =
       /(n[ãa]o\s+(temos|tem|h[áa]|possu[íi]mos|existe[m]?)|sem\b|indispon|lotad|esgotad|nenhum)[^.!?\n]{0,60}(vaga|hor[áa]ri|dispon|turno|agenda)/i.test(response.message)
     const afirmaVagas =
@@ -1228,7 +1246,7 @@ Responda SEMPRE em português brasileiro (pt-BR) com ortografia e acentuação c
   // Escopo estreito de propósito: só dispara quando houve tentativa que falhou —
   // não toca em "vou confirmar"/perguntas nem em respostas sem tentativa de reserva.
   // =========================================================================
-  if (response && agent.booking_tool_enabled && bookingAttemptFailed && !reservationConfirmed) {
+  if (RESERVA_PELA_IA && response && agent.booking_tool_enabled && bookingAttemptFailed && !reservationConfirmed) {
     const afirmaConfirmada =
       /(reserva|mesa|lugar|hor[áa]rio)[^.!?\n]{0,40}(confirmad|garantid|marcad|reservad|agendad)/i.test(response.message) ||
       /(confirmei|reserva feita|est[áa]\s+(tudo\s+)?(confirmad|garantid|marcad))/i.test(response.message)
