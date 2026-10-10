@@ -848,36 +848,17 @@ export function AIAgentForm({
                 )}
               </div>
 
-              <div className="flex items-center justify-between border-t border-[var(--ds-border-default)] pt-3">
-                <div className="flex-1">
-                  <Label htmlFor="bookingToolEnabled" className="text-sm">
-                    Tool de Agendamento
-                  </Label>
-                  {bookingPrereqsLoading ? (
-                    <p className="text-xs text-[var(--ds-text-muted)]">Verificando...</p>
-                  ) : bookingPrereqs.ready ? (
-                    <p className="text-xs text-[var(--ds-text-muted)]">
-                      {bookingToolEnabled
-                        ? 'Agente envia formulário de agendamento'
-                        : 'Agente não tem acesso ao calendário'}
-                    </p>
-                  ) : (
-                    <div className="mt-1 space-y-1">
-                      <p className="text-xs text-amber-400">Configure primeiro:</p>
-                      <ul className="list-inside list-disc text-[10px] text-[var(--ds-text-muted)]">
-                        {bookingPrereqs.missing.map((item, i) => (
-                          <li key={i}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-                <Switch
-                  id="bookingToolEnabled"
-                  checked={bookingToolEnabled}
-                  onCheckedChange={setBookingToolEnabled}
-                  disabled={!bookingPrereqs.ready || bookingPrereqsLoading}
-                />
+              {/* A chave de agendamento saiu da tela: a reserva pela IA está
+                  desligada em lib/ai/agents/chat-agent.ts (RESERVA_PELA_IA).
+                  Mantê-la aqui ofereceria um botão que não liga nada — e pior,
+                  daria a entender que a IA voltaria a consultar a agenda. */}
+              <div className="border-t border-[var(--ds-border-default)] pt-3">
+                <p className="text-sm text-[var(--ds-text-primary)]">Reservas</p>
+                <p className="text-xs text-[var(--ds-text-muted)]">
+                  A IA não faz reservas: ela informa menu, horários e políticas da casa e
+                  encaminha o cliente para o WhatsApp oficial, onde a equipe confirma a
+                  disponibilidade.
+                </p>
               </div>
 
               <div className="flex items-center justify-between border-t border-[var(--ds-border-default)] pt-3">
