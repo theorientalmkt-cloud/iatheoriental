@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CONCIERGE_PROMPT } from './concierge'
+import { CONCIERGE_PROMPT, CONCIERGE_DESCRICAO } from './concierge'
 import { buildMenuRulesBlock } from '@/lib/menus/catalog'
 
 describe('prompt do concierge — o que NÃO pode voltar', () => {
@@ -167,5 +167,23 @@ describe('taxa de no-show — informada, sem calcular', () => {
 
   it('mantém a taxa fora de negociação', () => {
     expect(CONCIERGE_PROMPT).toMatch(/Não negocie preços, taxa de no-show/i)
+  })
+})
+
+describe('descrição do agente para a interface', () => {
+  it('existe e descreve o papel real', () => {
+    // O card derivava isso do system_prompt por regex. Com a coluna vazia,
+    // exibia "Assistente virtual"; com ela NULL, quebrava a tela de agentes.
+    expect(CONCIERGE_DESCRICAO).toMatch(/The Oriental Sushiya/)
+    expect(CONCIERGE_DESCRICAO.length).toBeGreaterThan(30)
+  })
+
+  it('diz que encaminha reservas, coerente com o prompt', () => {
+    expect(CONCIERGE_DESCRICAO).toMatch(/encaminha reservas/i)
+    expect(CONCIERGE_PROMPT).toMatch(/As reservas são feitas direto com a nossa equipe/i)
+  })
+
+  it('cabe numa linha do card', () => {
+    expect(CONCIERGE_DESCRICAO.length).toBeLessThan(160)
   })
 })

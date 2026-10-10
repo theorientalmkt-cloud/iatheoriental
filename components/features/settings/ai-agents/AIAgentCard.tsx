@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import type { AIAgent } from '@/types'
+import { CONCIERGE_DESCRICAO } from '@/lib/ai/prompts/concierge'
 
 export interface AIAgentCardProps {
   agent: AIAgent
@@ -33,32 +34,6 @@ export interface AIAgentCardProps {
 }
 
 // Extrai descrição curta do system prompt (primeira frase ou função principal)
-function getAgentDescription(prompt: string): string {
-  // Tenta extrair a função do agente (padrões comuns em português)
-  const patterns = [
-    /(?:você|vc)?\s*(?:ajuda|auxilia|responde|atende)\s*([^.!?\n]{10,50})/i,
-    /(?:sua função é|seu papel é|você deve)\s*([^.!?\n]{10,50})/i,
-    /assistente\s+(?:de|para|virtual)\s*([^.!?\n]{5,40})/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = prompt.match(pattern)
-    if (match) {
-      const desc = match[0].trim()
-        .replace(/^você\s+/i, '')
-        .replace(/^vc\s+/i, '')
-      if (desc.length > 60) return desc.slice(0, 57) + '...'
-      return desc
-    }
-  }
-
-  // Fallback: primeira frase até 60 chars
-  const firstSentence = prompt.split(/[.!?\n]/)[0]?.trim()
-  if (!firstSentence) return 'Assistente virtual'
-  if (firstSentence.length > 60) return firstSentence.slice(0, 57) + '...'
-  return firstSentence
-}
-
 // Gera iniciais do nome (até 2 letras)
 function getInitials(name: string): string {
   return name
@@ -147,7 +122,7 @@ export function AIAgentCard({
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-white truncate">{agent.name}</h3>
             <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">
-              {getAgentDescription(agent.system_prompt)}
+              {CONCIERGE_DESCRICAO}
             </p>
           </div>
         </div>
