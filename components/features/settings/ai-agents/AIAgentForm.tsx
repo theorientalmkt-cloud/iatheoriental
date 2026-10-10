@@ -211,7 +211,9 @@ export function AIAgentForm({
   useEffect(() => {
     if (agent) {
       setName(agent.name)
-      setSystemPrompt(agent.system_prompt)
+      // A coluna pode estar NULL desde que o prompt saiu do banco. Sem o
+      // fallback, o valor nulo circularia pelo formulário até o salvamento.
+      setSystemPrompt(agent.system_prompt ?? '')
       setModel(agent.model)
       setTemperature(agent.temperature)
       setMaxTokens(agent.max_tokens)

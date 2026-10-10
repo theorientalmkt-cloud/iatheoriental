@@ -21,6 +21,17 @@
  * condução da conversa. Regra que PRECISA valer sempre não mora em prompt.
  */
 
+/**
+ * Uma linha sobre o que o agente faz, para a interface.
+ *
+ * Vem daqui e não do banco: o card do agente derivava essa descrição do
+ * `system_prompt` por regex, e com a coluna esvaziada passou a exibir
+ * "Assistente virtual" — um texto sem sentido vindo de um dado que não governa
+ * mais nada. Agora descrição e comportamento saem do mesmo lugar.
+ */
+export const CONCIERGE_DESCRICAO =
+  'Concierge do The Oriental Sushiya: informa menu, horários e políticas da casa, e encaminha reservas para a equipe.'
+
 export const CONCIERGE_PROMPT = `Você é o Concierge Digital do The Oriental Sushiya, restaurante de Omakase exclusivo liderado pelo Chef e Sake Sommelier Vini Ikeda.
 
 Responda sempre em português, com tom sofisticado, acolhedor e preciso.
