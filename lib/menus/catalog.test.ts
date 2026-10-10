@@ -120,14 +120,16 @@ describe('bloco de prompt gerado', () => {
     expect(bloco).toMatch(/FECHADO: Segunda/)
   })
 
-  it('declara a capacidade real da casa', () => {
-    expect(bloco).toContain(`${CAPACITY_TOTAL} lugares por turno`)
-    expect(bloco).toContain(`${DECK_CAPACITY} ficam no deck/janela`)
+  it('não declara capacidade — a IA não aloca mesa nem conta lugar', () => {
+    expect(bloco).not.toMatch(/lugares por turno/i)
+    expect(bloco).not.toMatch(/deck\/janela/i)
   })
 
-  it('manda a IA tirar as vagas da ferramenta, não do texto', () => {
-    expect(bloco).toContain('checkAvailability')
-    expect(bloco).toMatch(/não contém vaga nenhuma/i)
+  it('deixa claro que é horário de funcionamento, não agenda', () => {
+    // Sem isso a IA leria "jantar terça a sábado" como "há vaga terça a sábado".
+    expect(bloco).toMatch(/horário de FUNCIONAMENTO, não a agenda/i)
+    expect(bloco).toMatch(/disponibilidade é com a equipe/i)
+    expect(bloco).not.toContain('checkAvailability')
   })
 })
 

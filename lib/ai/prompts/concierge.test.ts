@@ -62,19 +62,29 @@ describe('prompt do concierge — o que precisa continuar valendo', () => {
     expect(CONCIERGE_PROMPT).toMatch(/em nossos registros/i)
   })
 
-  it('mantém a regra de não consultar disponibilidade sem pedido', () => {
-    expect(CONCIERGE_PROMPT).toContain('checkAvailability')
-    expect(CONCIERGE_PROMPT).toMatch(/campanha de marketing/i)
+  it('proíbe informar disponibilidade, em qualquer forma', () => {
+    // A IA não enxerga a agenda. Dizer que há (ou não há) vaga seria inventar.
+    expect(CONCIERGE_PROMPT).toMatch(/NUNCA informe disponibilidade/i)
+    expect(CONCIERGE_PROMPT).toMatch(/nunca diga quantos lugares restam/i)
+    expect(CONCIERGE_PROMPT).toMatch(/nunca afirme nem negue que há vaga/i)
   })
 
-  it('mantém a coleta obrigatória antes da reserva', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/nome completo/i)
-    expect(CONCIERGE_PROMPT).toMatch(/alergia/i)
-    expect(CONCIERGE_PROMPT).toMatch(/pet/i)
+  it('manda encaminhar a reserva para o WhatsApp oficial', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/As reservas são feitas direto com a nossa equipe/i)
   })
 
-  it('mantém a regra de não perguntar o local da mesa', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/nunca pergunte "prefere balcão ou deck"/i)
+  it('não promete reserva nem confirma pedido', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/nunca prometa, confirme ou registre uma reserva/i)
+  })
+
+  it('não coleta mais dados de reserva — isso é da equipe', () => {
+    expect(CONCIERGE_PROMPT).not.toMatch(/preciso de 3 informações/i)
+    expect(CONCIERGE_PROMPT).not.toContain('confirmBooking')
+    expect(CONCIERGE_PROMPT).not.toContain('checkAvailability')
+  })
+
+  it('não decide mais o local da mesa', () => {
+    expect(CONCIERGE_PROMPT).not.toMatch(/prefere balcão ou deck/i)
   })
 
   it('mantém a resposta única de LGPD, sem explicação extra', () => {
@@ -134,39 +144,28 @@ describe('caminho para o atendimento humano', () => {
   })
 })
 
-describe('taxa de no-show é informada, não só sabida', () => {
-  it('manda informar antes de criar a reserva', () => {
-    // A IA já recebia o valor no bloco de menus, mas o prompt só dizia "não
-    // negocie". Ela respondia se perguntassem — e o cliente podia reservar
-    // sem nunca ouvir falar da taxa, descobrindo depois.
-    expect(CONCIERGE_PROMPT).toMatch(/informe a taxa de no-show antes de criar a reserva/i)
+describe('taxa de no-show — informada, sem calcular', () => {
+  it('está na lista do que a IA pode e deve informar', () => {
+    // A IA não reserva mais, mas a taxa é fato fixo do menu e o cliente
+    // pergunta. Omitir viraria surpresa de cobrança lá na frente.
+    expect(CONCIERGE_PROMPT).toMatch(/a taxa de no-show, que é um valor único por reserva/i)
   })
 
-  it('explica que não é sinal nem entrada', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/não é sinal, não é entrada/i)
+  it('deixa claro que só vale para quem falta', () => {
     expect(CONCIERGE_PROMPT).toMatch(/apenas em caso de não comparecimento/i)
   })
 
-  it('não escreve o valor da taxa — ele vem do catálogo', () => {
-    // Valor fixo aqui divergiria do catálogo na primeira mudança de menu, que
-    // é exatamente o erro que o Nippon deixou acontecer. A instrução usa um
-    // placeholder; o número chega pelo bloco MENUS E HORÁRIOS.
-    //
-    // (O R$ 100 da taxa de ROLHA segue no prompt de propósito: não é preço de
-    // menu e não existe no catálogo.)
-    expect(CONCIERGE_PROMPT).toContain('taxa de no-show de R$ [valor] por reserva')
-    expect(CONCIERGE_PROMPT).not.toMatch(/taxa de no-show de R\$\s*\d/i)
+  it('proíbe multiplicar pelo número de pessoas', () => {
+    // O prompt antigo mandava "R$ 100 x [pessoas]": um grupo de 6 era
+    // informado de R$ 600 onde o certo são R$ 100.
+    expect(CONCIERGE_PROMPT).toMatch(/nunca multiplicada pelo número de pessoas/i)
   })
 
-  it('proíbe multiplicar pelo número de pessoas', () => {
-    // A taxa é da reserva. O prompt antigo mandava "R$ 100 x [pessoas]", e um
-    // grupo de 6 era informado de R$ 600 em vez de R$ 100.
-    expect(CONCIERGE_PROMPT).toMatch(/valor ÚNICO por reserva/i)
-    expect(CONCIERGE_PROMPT).toMatch(/nunca multiplique pelo número de pessoas/i)
-    expect(CONCIERGE_PROMPT).not.toMatch(/no-show[^.\n]*por pessoa/i)
+  it('não escreve o valor — ele vem do catálogo', () => {
+    expect(CONCIERGE_PROMPT).not.toMatch(/taxa de no-show[^.\n]*R\$\s*\d/i)
   })
 
   it('mantém a taxa fora de negociação', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/não é negociável/i)
+    expect(CONCIERGE_PROMPT).toMatch(/Não negocie preços, taxa de no-show/i)
   })
 })

@@ -194,11 +194,8 @@ export function buildMenuRulesBlock(): string {
   linhas.push('Não existe nenhum horário além dos listados acima. Se o cliente pedir outro,')
   linhas.push('informe que não está disponível e ofereça os horários válidos mais próximos.')
   linhas.push('')
-  linhas.push(`Capacidade: ${CAPACITY_TOTAL} lugares por turno, dos quais ${DECK_CAPACITY} ficam no deck/janela`)
-  linhas.push('(os únicos que aceitam pet). O cliente NUNCA escolhe o local — a casa aloca.')
-  linhas.push('')
-  linhas.push('Os números de vagas vêm SEMPRE da ferramenta checkAvailability, que lê a agenda')
-  linhas.push('em tempo real. Este bloco não contém vaga nenhuma — sem consultar, você não sabe.')
+  linhas.push('Este bloco traz o horário de FUNCIONAMENTO, não a agenda. Ele não diz, e você')
+  linhas.push('não tem como saber, se há lugar livre numa data — disponibilidade é com a equipe.')
 
   return linhas.join('\n')
 }

@@ -88,8 +88,8 @@ describe('Passo 2 — "Quanto custa?": responde sem consultar a agenda', () => {
     expect(menuById('Retrospectiva').precoPorPessoa).toBe(380)
   })
 
-  it('pergunta de preço não autoriza consultar disponibilidade', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/"quanto custa\?".*NÃO autorizam a consulta/is)
+  it('responde o preço antes de encaminhar', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/Antes de encaminhar, responda o que o cliente perguntou/i)
   })
 })
 
@@ -98,12 +98,12 @@ describe('Passo 3 — "Quero reservar sábado": turnos oferecidos', () => {
     expect(turnosForWeekday(6).map((t) => t.time)).toEqual(['13:00', '19:00', '21:00'])
   })
 
-  it('a IA pergunta a data antes de consultar', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/pergunte a data antes de qualquer consulta/i)
+  it('a IA encaminha a reserva em vez de consultar a agenda', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/As reservas são feitas direto com a nossa equipe/i)
   })
 
-  it('as vagas vêm da ferramenta, nunca do texto', () => {
-    expect(buildMenuRulesBlock()).toMatch(/não contém vaga nenhuma/i)
+  it('o bloco de menus é funcionamento, não agenda', () => {
+    expect(buildMenuRulesBlock()).toMatch(/horário de FUNCIONAMENTO, não a agenda/i)
   })
 })
 
@@ -217,8 +217,8 @@ describe('Garantias transversais', () => {
     expect(inserted[0].location).toBe('Deck/janela (pet)')
   })
 
-  it('a IA não escolhe o local da mesa com o cliente', () => {
-    expect(CONCIERGE_PROMPT).toMatch(/nunca pergunte "prefere balcão ou deck"/i)
+  it('a IA não fala de lugar nem de mesa', () => {
+    expect(CONCIERGE_PROMPT).toMatch(/nunca diga quantos lugares restam/i)
   })
 
   it('dado de terceiro tem resposta única e fechada', () => {
